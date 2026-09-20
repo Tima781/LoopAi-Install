@@ -17,47 +17,22 @@ android {
     applicationId = "com.loopai.fresh.app"
     minSdk = 23
     targetSdk = 34
-    versionCode = 5
-    versionName = "1.4"
+    versionCode = 10
+    versionName = "2.5.0"
     multiDexEnabled = true
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
   signingConfigs {
-    create("releaseConfig") {
-      val rKey = file("${rootDir}/release.keystore")
+    getByName("debug") {
       val dKey = file("${rootDir}/debug.keystore")
-      if (rKey.exists()) {
-        storeFile = rKey
-        storePassword = "loopaipass"
-        keyAlias = "loopai"
-        keyPassword = "loopaipass"
-      } else {
+      if (dKey.exists()) {
         storeFile = dKey
-        storePassword = "android"
-        keyAlias = "androiddebugkey"
-        keyPassword = "android"
       }
-      enableV1Signing = true
-      enableV2Signing = true
-      enableV3Signing = true
-      enableV4Signing = true
-    }
-    create("debugConfig") {
-      val rKey = file("${rootDir}/release.keystore")
-      val dKey = file("${rootDir}/debug.keystore")
-      if (rKey.exists()) {
-        storeFile = rKey
-        storePassword = "loopaipass"
-        keyAlias = "loopai"
-        keyPassword = "loopaipass"
-      } else {
-        storeFile = dKey
-        storePassword = "android"
-        keyAlias = "androiddebugkey"
-        keyPassword = "android"
-      }
+      storePassword = "android"
+      keyAlias = "androiddebugkey"
+      keyPassword = "android"
       enableV1Signing = true
       enableV2Signing = true
       enableV3Signing = true
@@ -70,10 +45,10 @@ android {
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("releaseConfig")
+      signingConfig = signingConfigs.getByName("debug")
     }
     debug {
-      signingConfig = signingConfigs.getByName("debugConfig")
+      signingConfig = signingConfigs.getByName("debug")
     }
   }
   compileOptions {
