@@ -20,14 +20,7 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.11.1'
+          cache: 'gradle'
 
       - name: Prepare environment and keystore
         run: |
@@ -37,11 +30,14 @@ jobs:
           touch .env
           touch app/.env
 
-      - name: Build APK with Gradle
-        run: gradle assembleDebug --stacktrace --no-daemon
+      - name: Setup & Run Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+          arguments: assembleDebug --stacktrace --no-daemon
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: LoopAi-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/*.apk
