@@ -66,6 +66,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
@@ -94,8 +96,6 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material.icons.filled.VolumeOff
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -148,6 +148,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -191,6 +192,7 @@ data class ChatMessage(
   val motionStyle: String = "Кинематографичный зум",
   val originalPrompt: String = "",
   val speechText: String = "",
+  val durationSeconds: Int = 5,
   // In-progress video generation state
   val isGeneratingVideo: Boolean = false,
 )
@@ -470,61 +472,7 @@ class CinematicAudioEngine {
 }
 
 fun generateAiResponse(userPrompt: String, model: AiModelType, mode: ModelMode): String {
-  val cleanPrompt = userPrompt.trim().lowercase()
-
-  val isGreeting = cleanPrompt in listOf("привет", "здравствуй", "здравствуйте", "ку", "хай", "hello", "hi", "салам")
-  val isWhoAreYou = "кто ты" in cleanPrompt || "ты кто" in cleanPrompt || "как тебя зовут" in cleanPrompt || "что ты умеешь" in cleanPrompt
-  val isHowAreYou = "как дела" in cleanPrompt || "как ты" in cleanPrompt || "что делаешь" in cleanPrompt
-  val isThanks = "спасибо" in cleanPrompt || "благодарю" in cleanPrompt || "спс" in cleanPrompt
-
-  val modePrefix = if (mode == ModelMode.PRO) {
-    "🔬 [Глубокий анализ • Pro]:\n\n"
-  } else ""
-
-  return when (model) {
-    AiModelType.DEEPSEEK -> {
-      val reasoning = if (mode == ModelMode.PRO) {
-        "💭 <think>\nАнализирую входящий запрос: «$userPrompt»...\nОпределяю оптимальное решение с высокой степенью логики.\n</think>\n\n"
-      } else ""
-      when {
-        isGreeting -> "${modePrefix}${reasoning}Приветствую! Я DeepSeek. Готов помочь с рассуждениями, решением сложных задач, математикой или программированием. О чём хотите поговорить?"
-        isWhoAreYou -> "${modePrefix}${reasoning}Я DeepSeek — интеллектуальная модель ИИ, ориентированная на глубокий логический анализ, математику, код и структурные рассуждения."
-        isHowAreYou -> "${modePrefix}${reasoning}Все системы функционируют оптимально. Нейросети активны, готов к решению задач любой сложности!"
-        isThanks -> "${modePrefix}${reasoning}Всегда пожалуйста! Обращайтесь в любое время, если потребуется детальный разбор или помощь."
-        else -> "${modePrefix}${reasoning}Понял ваш запрос: «$userPrompt».\n\nDeepSeek готов предоставить структурированный и точный ответ."
-      }
-    }
-    AiModelType.GEMINI -> {
-      when {
-        isGreeting -> "${modePrefix}Привет! Я Gemini от Google. Рад встрече! Чем могу помочь тебе прямо сейчас — текстом, идеями, планированием или ответом на вопрос?"
-        isWhoAreYou -> "${modePrefix}Я Gemini — мультимодальный искусственный интеллект от Google. Умею находить ответы, генерировать идеи и писать тексты."
-        isHowAreYou -> "${modePrefix}Отлично, спасибо! Готов генерировать свежие идеи. Как твои дела?"
-        isThanks -> "${modePrefix}Пожалуйста! Очень рад был помочь."
-        else -> "${modePrefix}Отличный вопрос! По поводу «$userPrompt»:\n\nЯ обработал информацию и готов помочь разобраться подробнее."
-      }
-    }
-    AiModelType.CHATGPT -> {
-      when {
-        isGreeting -> "${modePrefix}Здравствуйте! Я ChatGPT. Готов помочь вам с любой задачей: написать текст, объяснить тему, перевести или пообщаться."
-        isWhoAreYou -> "${modePrefix}Я ChatGPT (на базе архитектуры GPT-4o). Моя задача — быть вашим универсальным ассистентом."
-        isHowAreYou -> "${modePrefix}У меня всё отлично! Готов поддержать беседу. Чем сегодня займёмся?"
-        isThanks -> "${modePrefix}Не за что! Рад помочь. Если будут ещё вопросы, пишите."
-        else -> "${modePrefix}Спасибо за вопрос по теме «$userPrompt»!\n\nЯ с радостью помогу вам с этим."
-      }
-    }
-    AiModelType.CLAUDE -> {
-      when {
-        isGreeting -> "${modePrefix}Приветствую! Я Claude. Буду рад помочь вам с вдумчивым анализом, написанием текстов или кодом."
-        isWhoAreYou -> "${modePrefix}Я Claude — ИИ-ассистент для точной, вдумчивой и безопасной работы с текстами и логикой."
-        isHowAreYou -> "${modePrefix}Спасибо за интерес! Мои системы готовы к продуктивной совместной работе."
-        isThanks -> "${modePrefix}Был искренне рад помочь!"
-        else -> "${modePrefix}Внимательно рассмотрел ваш запрос: «$userPrompt».\n\nГотов предоставить подробный, аккуратный и структурированный ответ."
-      }
-    }
-    AiModelType.SEEDANSE -> {
-      "🎬 Приветствую в Студии Видеогенерации!\n\nЯ создаю кинематографичные видео на передовых нейросетях:\n• **Seedanse 2.0 Fast** (⚡ 60 FPS ультра-скорость)\n• **Seedanse 2.5** (🎬 4K Pro кинематография)\n• **Veo 3** (✨ Google Veo фотореализм)\n• **Google Omni Flash** (⚡ Мультимодальный синтез)\n\n💡 Нажмите кнопку **«Контент ИИ»** или введите промпт в поле ввода ниже, чтобы запустить генерацию видео!"
-    }
-  }
+  return AiChatEngine.generateResponse(userPrompt, model, mode)
 }
 
 enum class Screen {
@@ -541,23 +489,34 @@ enum class AiModelType(
   val displayName: String,
   val subtitle: String,
   val badge: String,
+  val isVideoModel: Boolean = false,
 ) {
-  DEEPSEEK("DeepSeek", "Мощная аналитика и рассуждения (R1 / V3)", "R1"),
-  GEMINI("Gemini", "Умный контекст и креативность (Google)", "2.0"),
-  CHATGPT("ChatGPT", "Универсальный помощник (GPT-4o)", "4o"),
-  CLAUDE("Claude", "Точная работа с текстом и кодом (Sonnet)", "3.5"),
-  SEEDANSE("Seedanse & Veo", "Студия видео (Seedanse, Veo 3, Omni Flash)", "Video"),
+  DEEPSEEK("DeepSeek R1", "Мощная аналитика и рассуждения (R1 / V3)", "R1", false),
+  GEMINI("Gemini Pro", "Интеллектуальный поиск и креативность (Google)", "3.1", false),
+  CHATGPT("ChatGPT", "Универсальный помощник (GPT-4o)", "4o", false),
+  CLAUDE("Claude", "Точная работа с текстом и кодом (Sonnet)", "3.5", false),
+
+  GOOGLE_OMNI_FLASH("Google Omni Flash", "Мультимодальный синтез речи и видео", "⚡ Omni", true),
+  VEO_3("Google Veo 3", "Кинематографичная генерация видео 4K 60FPS", "✨ Veo 3", true),
+  SEEDANSE("Seedanse Studio", "Студия видеогенерации и анимации", "🎬 4K Pro", true),
 }
 
-enum class RainbowTitleColor(val title: String, val color: Color?) {
-  DEFAULT("По умолчанию", null),
-  RED("Красный", Color(0xFFEF4444)),
-  ORANGE("Оранжевый", Color(0xFFF97316)),
-  YELLOW("Жёлтый", Color(0xFFEAB308)),
-  GREEN("Зелёный", Color(0xFF22C55E)),
-  CYAN("Голубой", Color(0xFF06B6D4)),
-  BLUE("Синий", Color(0xFF3B82F6)),
-  PURPLE("Фиолетовый", Color(0xFFA855F7)),
+enum class RainbowTitleColor(
+  val title: String,
+  val color: Color,
+  val darkTextColor: Boolean = false,
+  val rainbowTag: String = "",
+) {
+  RED("Красный", Color(0xFFEF4444), rainbowTag = "Каждый"),
+  ORANGE("Оранжевый", Color(0xFFF97316), rainbowTag = "Охотник"),
+  YELLOW("Жёлтый", Color(0xFFFACC15), darkTextColor = true, rainbowTag = "Желает"),
+  GREEN("Зелёный", Color(0xFF22C55E), rainbowTag = "Знать"),
+  CYAN("Голубой", Color(0xFF0EA5E9), rainbowTag = "Где"),
+  BLUE("Синий (LoopAi)", Color(0xFF2563EB), rainbowTag = "Сидит"),
+  PURPLE("Фиолетовый", Color(0xFF8B5CF6), rainbowTag = "Фазан"),
+  PINK("Розовый", Color(0xFFEC4899)),
+  TEAL("Бирюзовый", Color(0xFF14B8A6)),
+  INDIGO("Индиго", Color(0xFF6366F1)),
 }
 
 class MainActivity : ComponentActivity() {
@@ -610,11 +569,7 @@ fun LoopAiApp(
   var showSettingsDialog by remember { mutableStateOf(false) }
   val appCoroutineScope = rememberCoroutineScope()
 
-  val effectiveTitleColor = when {
-    selectedTitleColor.color != null -> selectedTitleColor.color
-    isDarkTheme -> Color.White
-    else -> Color.Black
-  }
+  val effectiveTitleColor = selectedTitleColor.color
 
   BackHandler(enabled = currentScreen == Screen.Chat) {
     currentScreen = Screen.Home
@@ -642,10 +597,11 @@ fun LoopAiApp(
           modelName: String,
           photos: List<String>,
           aspect: String,
+          durationSeconds: Int = 5,
         ) {
           Toast.makeText(
             context,
-            "Ваше видео будет готово через несколько минут, ожидайте...",
+            "Ваше видео ($durationSeconds сек) будет готово через несколько минут, ожидайте...",
             Toast.LENGTH_LONG
           ).show()
 
@@ -656,9 +612,9 @@ fun LoopAiApp(
           // Add placeholder generating message
           val generatingMessage = ChatMessage(
             id = generatingMsgId,
-            text = "🎬 Создание видео ($modelName): «$prompt»",
+            text = "🎬 Создание видео ($modelName • $durationSeconds сек): «$prompt»",
             isUser = false,
-            modelType = AiModelType.SEEDANSE,
+            modelType = selectedAiModel,
             isVideo = true,
             videoModel = modelName,
             originalPrompt = prompt,
@@ -666,6 +622,7 @@ fun LoopAiApp(
             attachedImages = photos,
             visualSceneUrl = sceneUrl,
             aspectRatio = aspect,
+            durationSeconds = durationSeconds,
             isGeneratingVideo = true,
           )
           activeMessages.add(generatingMessage)
@@ -685,12 +642,13 @@ fun LoopAiApp(
               if (sec >= totalSeconds) {
                 activeMessages[index] = currentMsg.copy(
                   text = if (photos.isNotEmpty()) {
-                    "Ваше видео готово по промпту: «$prompt» на основе ваших фото ($modelName)!"
+                    "Ваше видео ($durationSeconds сек) готово по промпту: «$prompt» на основе ваших фото ($modelName)!"
                   } else {
-                    "Ваше видео готово по промпту: «$prompt» ($modelName)!"
+                    "Ваше видео ($durationSeconds сек) готово по промпту: «$prompt» ($modelName)!"
                   },
                   isGeneratingVideo = false,
                   speechText = speech,
+                  durationSeconds = durationSeconds,
                   videoSeed = System.currentTimeMillis(),
                 )
                 activeVideoJobs.remove(generatingMsgId)
@@ -750,20 +708,26 @@ fun LoopAiApp(
                   )
                 )
               }
-            } else if (selectedAiModel == AiModelType.SEEDANSE) {
-              // User typed a video prompt in Seedanse Video
+            } else if (selectedAiModel.isVideoModel) {
+              val modelToUse = when (selectedAiModel) {
+                AiModelType.VEO_3 -> "Veo 3"
+                AiModelType.GOOGLE_OMNI_FLASH -> "Google Omni Flash"
+                else -> selectedVideoModel
+              }
               activeMessages.add(
                 ChatMessage(
                   text = text,
                   isUser = true,
                   aspectRatio = "16:9",
+                  durationSeconds = 5,
                 )
               )
               startVideoGeneration(
                 prompt = text,
-                modelName = selectedVideoModel,
+                modelName = modelToUse,
                 photos = emptyList(),
                 aspect = "16:9",
+                durationSeconds = 5,
               )
             } else {
               // Standard AI chat text message (DeepSeek, Gemini, ChatGPT, Claude)
@@ -788,13 +752,14 @@ fun LoopAiApp(
               }
             }
           },
-          onGenerateVideoContent = { prompt, modelName, photos, aspect ->
+          onGenerateVideoContent = { prompt, modelName, photos, aspect, duration ->
             activeMessages.add(
               ChatMessage(
                 text = prompt,
                 isUser = true,
                 attachedImages = photos,
                 aspectRatio = aspect,
+                durationSeconds = duration,
               )
             )
             startVideoGeneration(
@@ -802,6 +767,7 @@ fun LoopAiApp(
               modelName = modelName,
               photos = photos,
               aspect = aspect,
+              durationSeconds = duration,
             )
           },
           onFastForwardVideo = { msgId ->
@@ -814,6 +780,7 @@ fun LoopAiApp(
                 text = "Ваше видео готово по промпту: «${current.originalPrompt.ifEmpty { "Видео по запросу" }}»!",
                 isGeneratingVideo = false,
                 speechText = extractSpeechText(current.originalPrompt),
+                durationSeconds = current.durationSeconds,
                 videoSeed = System.currentTimeMillis(),
               )
             }
@@ -832,8 +799,6 @@ fun LoopAiApp(
       onThemeChange = onToggleTheme,
       selectedTitleColor = selectedTitleColor,
       onSelectTitleColor = onSelectTitleColor,
-      selectedAiModel = selectedAiModel,
-      onSelectAiModel = onSelectAiModel,
       accentColor = effectiveTitleColor,
       onDismiss = { showSettingsDialog = false }
     )
@@ -847,7 +812,7 @@ fun HomeScreen(
   accentColor: Color = BluePrimary,
   modifier: Modifier = Modifier,
 ) {
-  val isDark = MaterialTheme.colorScheme.background.value != 0xFFF8FAFCUL
+  val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
   val backgroundColor = MaterialTheme.colorScheme.background
   val isWhiteAccent = accentColor == Color.White
   val buttonContentColor = if (isWhiteAccent) Color.Black else Color.White
@@ -958,14 +923,14 @@ fun ChatScreen(
   selectedVideoModel: String,
   onSelectVideoModel: (String) -> Unit,
   onSendMessage: (String, ModelMode) -> Unit,
-  onGenerateVideoContent: (prompt: String, model: String, photos: List<String>, aspect: String) -> Unit,
+  onGenerateVideoContent: (prompt: String, model: String, photos: List<String>, aspect: String, durationSeconds: Int) -> Unit,
   onFastForwardVideo: (String) -> Unit,
   onBack: () -> Unit,
   onOpenSettings: () -> Unit,
   onSelectAiModel: (AiModelType) -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  val isSeedanse = selectedAiModel == AiModelType.SEEDANSE
+  val isVideoMode = selectedAiModel.isVideoModel
   val context = androidx.compose.ui.platform.LocalContext.current
 
   var inputText by remember { mutableStateOf("") }
@@ -1006,14 +971,14 @@ fun ChatScreen(
     modifier = modifier.fillMaxSize(),
     drawerContent = {
       ModalDrawerSheet(
-        modifier = Modifier.width(280.dp),
+        modifier = Modifier.width(285.dp),
         drawerContainerColor = MaterialTheme.colorScheme.surface,
       ) {
         Spacer(modifier = Modifier.height(16.dp))
         Column(
           modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 12.dp)
+            .padding(horizontal = 20.dp, vertical = 10.dp)
         ) {
           Text(
             text = "LoopAi",
@@ -1023,7 +988,7 @@ fun ChatScreen(
           )
           Spacer(modifier = Modifier.height(2.dp))
           Text(
-            text = "Активный чат: ${selectedAiModel.displayName}",
+            text = if (isVideoMode) "Студия: ${selectedAiModel.displayName}" else "Чат: ${selectedAiModel.displayName}",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
@@ -1031,24 +996,21 @@ fun ChatScreen(
         }
 
         HorizontalDivider(
-          modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+          modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
           color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
         )
 
-        // Раздел со списком отдельных чатов
+        // СЕКЦИЯ 1: ЧАТЫ С ИИ (DeepSeek, Gemini, ChatGPT, Claude)
         Text(
-          text = "ЧАТЫ С ИИ & ВИДЕО",
+          text = "ЧАТЫ С ИИ",
           fontSize = 11.sp,
           fontWeight = FontWeight.Bold,
-          color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-          modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+          color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+          modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
         )
 
-        AiModelType.entries.forEach { model ->
+        AiModelType.entries.filter { !it.isVideoModel }.forEach { model ->
           val isSelected = model == selectedAiModel
-          val isVideo = model == AiModelType.SEEDANSE
-          val icon = if (isVideo) Icons.Default.Videocam else Icons.AutoMirrored.Filled.Chat
-
           NavigationDrawerItem(
             label = {
               Row(
@@ -1077,7 +1039,7 @@ fun ChatScreen(
             },
             icon = {
               Icon(
-                imageVector = icon,
+                imageVector = Icons.AutoMirrored.Filled.Chat,
                 contentDescription = null,
                 tint = if (isSelected) accentColor else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp),
@@ -1091,7 +1053,77 @@ fun ChatScreen(
               }
             },
             modifier = Modifier
-              .padding(horizontal = 12.dp, vertical = 2.dp)
+              .padding(horizontal = 10.dp, vertical = 2.dp)
+              .testTag("drawer_chat_${model.name}"),
+            colors = NavigationDrawerItemDefaults.colors(
+              selectedContainerColor = accentColor.copy(alpha = 0.15f),
+              selectedTextColor = if (isWhiteAccent) MaterialTheme.colorScheme.onSurface else accentColor,
+              unselectedContainerColor = Color.Transparent,
+              unselectedTextColor = MaterialTheme.colorScheme.onSurface,
+            ),
+          )
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+        HorizontalDivider(
+          modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+          color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+        )
+
+        // СЕКЦИЯ 2: ВИДЕО СТУДИЯ (Google Omni Flash, Veo 3, Seedanse)
+        Text(
+          text = "ВИДЕО СТУДИЯ",
+          fontSize = 11.sp,
+          fontWeight = FontWeight.Bold,
+          color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+          modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+        )
+
+        AiModelType.entries.filter { it.isVideoModel }.forEach { model ->
+          val isSelected = model == selectedAiModel
+          NavigationDrawerItem(
+            label = {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Text(
+                  text = model.displayName,
+                  fontSize = 14.sp,
+                  fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                )
+                Surface(
+                  shape = RoundedCornerShape(4.dp),
+                  color = if (isSelected) accentColor.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant,
+                ) {
+                  Text(
+                    text = model.badge,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isSelected && !isWhiteAccent) accentColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                  )
+                }
+              }
+            },
+            icon = {
+              Icon(
+                imageVector = Icons.Default.Videocam,
+                contentDescription = null,
+                tint = if (isSelected) accentColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+              )
+            },
+            selected = isSelected,
+            onClick = {
+              coroutineScope.launch {
+                drawerState.close()
+                onSelectAiModel(model)
+              }
+            },
+            modifier = Modifier
+              .padding(horizontal = 10.dp, vertical = 2.dp)
               .testTag("drawer_chat_${model.name}"),
             colors = NavigationDrawerItemDefaults.colors(
               selectedContainerColor = accentColor.copy(alpha = 0.15f),
@@ -1352,7 +1384,7 @@ fun ChatScreen(
                 fontWeight = FontWeight.Bold,
               )
               Text(
-                text = if (isSeedanse) "Seedanse Video Studio" else selectedAiModel.displayName,
+                text = if (isVideoMode) "Видео Студия • ${selectedAiModel.displayName}" else selectedAiModel.displayName,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
@@ -1387,8 +1419,8 @@ fun ChatScreen(
               )
             }
 
-            // ONLY display "Контент ИИ" in Seedanse Video Studio!
-            if (isSeedanse) {
+            // Display "Контент ИИ" in Video Studio modes
+            if (isVideoMode) {
               IconButton(
                 onClick = { showAiContentSheet = true },
                 modifier = Modifier.testTag("top_ai_content_btn")
@@ -1422,8 +1454,8 @@ fun ChatScreen(
               .imePadding()
               .padding(horizontal = 12.dp, vertical = 8.dp),
           ) {
-            // ONLY in Seedanse: show "Контент ИИ" button & Seedanse 2.0 Fast / 2.5 Pro model selector
-            if (isSeedanse) {
+            // In Video Studio: show "+ Контент ИИ" button & model badge
+            if (isVideoMode) {
               Row(
                 modifier = Modifier
                   .fillMaxWidth()
@@ -1431,7 +1463,7 @@ fun ChatScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                // Кнопка "Контент ИИ"
+                // Кнопка "+ Контент ИИ"
                 Surface(
                   onClick = { showAiContentSheet = true },
                   shape = RoundedCornerShape(16.dp),
@@ -1451,7 +1483,7 @@ fun ChatScreen(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                      text = "Контент ИИ",
+                      text = "+ Контент ИИ",
                       color = if (isWhiteAccent) MaterialTheme.colorScheme.onSurface else accentColor,
                       fontSize = 13.sp,
                       fontWeight = FontWeight.Bold,
@@ -1459,35 +1491,19 @@ fun ChatScreen(
                   }
                 }
 
-                // Переключатель моделей Seedanse
-                Row(
-                  horizontalArrangement = Arrangement.spacedBy(6.dp),
-                  verticalAlignment = Alignment.CenterVertically
+                // Индикатор активной модели Видео Студии
+                Surface(
+                  shape = RoundedCornerShape(12.dp),
+                  color = accentColor.copy(alpha = 0.2f),
+                  border = androidx.compose.foundation.BorderStroke(1.dp, accentColor),
                 ) {
-                  listOf("Seedanse 2.0 Fast", "Seedanse 2.5").forEach { vModel ->
-                    val isVSelected = selectedVideoModel == vModel
-                    val pillBg = if (isVSelected) accentColor else MaterialTheme.colorScheme.surfaceVariant
-                    val pillText = if (isVSelected) buttonContentColor else MaterialTheme.colorScheme.onSurface
-
-                    Surface(
-                      onClick = { onSelectVideoModel(vModel) },
-                      shape = RoundedCornerShape(12.dp),
-                      color = pillBg,
-                      border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        if (isVSelected) accentColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                      ),
-                      modifier = Modifier.testTag("top_pill_${vModel.replace(" ", "_")}")
-                    ) {
-                      Text(
-                        text = if (vModel.contains("Fast")) "2.0 Fast" else "2.5 Pro",
-                        color = pillText,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp)
-                      )
-                    }
-                  }
+                  Text(
+                    text = selectedAiModel.displayName,
+                    color = if (isWhiteAccent) MaterialTheme.colorScheme.onSurface else accentColor,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp)
+                  )
                 }
               }
             }
@@ -1502,7 +1518,7 @@ fun ChatScreen(
                 onValueChange = { inputText = it },
                 placeholder = {
                   Text(
-                    text = if (isSeedanse) "Опишите сюжет или идею для видео..." else "Введите сообщение...",
+                    text = if (isVideoMode) "Опишите сюжет или идею для видео..." else "Введите сообщение...",
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     fontSize = 15.sp,
                   )
@@ -1552,7 +1568,7 @@ fun ChatScreen(
                   )
                 } else {
                   Icon(
-                    imageVector = if (isSeedanse) Icons.Default.Movie else Icons.AutoMirrored.Filled.Send,
+                    imageVector = if (isVideoMode) Icons.Default.Movie else Icons.AutoMirrored.Filled.Send,
                     contentDescription = "Отправить",
                     tint = if (canSend) buttonContentColor else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                     modifier = Modifier.size(20.dp),
@@ -1562,7 +1578,7 @@ fun ChatScreen(
             }
 
             // ONLY in standard text AI chats: Show Fast / Pro modes row
-            if (!isSeedanse) {
+            if (!isVideoMode) {
               Spacer(modifier = Modifier.height(6.dp))
               Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1657,7 +1673,7 @@ fun ChatScreen(
               contentAlignment = Alignment.Center,
             ) {
               Icon(
-                imageVector = if (isSeedanse) Icons.Default.Videocam else Icons.AutoMirrored.Filled.Chat,
+                imageVector = if (isVideoMode) Icons.Default.Videocam else Icons.AutoMirrored.Filled.Chat,
                 contentDescription = null,
                 tint = accentColor,
                 modifier = Modifier.size(34.dp),
@@ -1665,7 +1681,7 @@ fun ChatScreen(
             }
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-              text = if (isSeedanse) "Seedanse Video Studio" else "Диалог с ${selectedAiModel.displayName}",
+              text = if (isVideoMode) "Видео Студия • ${selectedAiModel.displayName}" else "Диалог с ${selectedAiModel.displayName}",
               color = MaterialTheme.colorScheme.onSurface,
               fontSize = 20.sp,
               fontWeight = FontWeight.Bold,
@@ -1673,8 +1689,8 @@ fun ChatScreen(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-              text = if (isSeedanse) {
-                "Создавайте потрясающие кинематографичные видео 4K 60 FPS.\nИспользуйте модели Seedanse 2.0 Fast и 2.5."
+              text = if (isVideoMode) {
+                "${selectedAiModel.subtitle}\nСоздавайте видеоконтент ИИ с выбором длительности (5с, 10с) и фото."
               } else {
                 selectedAiModel.subtitle
               },
@@ -1684,7 +1700,7 @@ fun ChatScreen(
               lineHeight = 20.sp,
             )
 
-            if (isSeedanse) {
+            if (isVideoMode) {
               Spacer(modifier = Modifier.height(20.dp))
               Button(
                 onClick = { showAiContentSheet = true },
@@ -1701,7 +1717,7 @@ fun ChatScreen(
                   modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Открыть Контент ИИ", fontWeight = FontWeight.Bold)
+                Text("Создать видеоконтент", fontWeight = FontWeight.Bold)
               }
             }
           }
@@ -1763,13 +1779,18 @@ fun ChatScreen(
   }
 
   if (showAiContentSheet) {
+    val defaultVideoModel = when (selectedAiModel) {
+      AiModelType.VEO_3 -> "Google Veo 3"
+      AiModelType.GOOGLE_OMNI_FLASH -> "Google Omni Flash"
+      else -> selectedVideoModel
+    }
     AiContentBottomSheet(
-      selectedVideoModel = selectedVideoModel,
+      selectedVideoModel = defaultVideoModel,
       accentColor = accentColor,
       onDismiss = { showAiContentSheet = false },
-      onGenerate = { prompt, model, photos, aspect ->
+      onGenerate = { prompt, model, photos, aspect, duration ->
         showAiContentSheet = false
-        onGenerateVideoContent(prompt, model, photos, aspect)
+        onGenerateVideoContent(prompt, model, photos, aspect, duration)
         coroutineScope.launch {
           if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size)
@@ -2001,14 +2022,14 @@ fun WebLandingDialog(onDismiss: () -> Unit, accentColor: Color) {
   }
 }
 
-// Compact & Focused AI Video Studio Bottom Sheet (Model, Prompt, Photo, Aspect Ratio)
+// Compact & Focused AI Video Studio Bottom Sheet (Model, Prompt, Photo, Aspect Ratio, Duration)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AiContentBottomSheet(
   selectedVideoModel: String,
   accentColor: Color,
   onDismiss: () -> Unit,
-  onGenerate: (prompt: String, model: String, photos: List<String>, aspect: String) -> Unit,
+  onGenerate: (prompt: String, model: String, photos: List<String>, aspect: String, durationSeconds: Int) -> Unit,
 ) {
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   val isWhiteAccent = accentColor == Color.White
@@ -2017,6 +2038,7 @@ fun AiContentBottomSheet(
   var videoPrompt by remember { mutableStateOf("") }
   var chosenModel by remember { mutableStateOf(selectedVideoModel) }
   var chosenAspect by remember { mutableStateOf("16:9") }
+  var chosenDuration by remember { mutableStateOf(5) }
   val attachedPhotos = remember { mutableStateListOf<String>() }
 
   val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -2056,7 +2078,7 @@ fun AiContentBottomSheet(
           )
           Spacer(modifier = Modifier.width(8.dp))
           Text(
-            text = "Контент ИИ • Видео",
+            text = "Видео Студия • Контент ИИ",
             fontSize = 17.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
@@ -2080,10 +2102,10 @@ fun AiContentBottomSheet(
       Spacer(modifier = Modifier.height(6.dp))
 
       val videoModels = listOf(
-        "Seedanse 2.0 Fast" to "⚡ 60 FPS",
-        "Seedanse 2.5" to "🎬 4K Pro",
+        "Google Omni Flash" to "⚡ Omni Flash",
         "Veo 3" to "✨ Google Veo",
-        "Google Omni Flash" to "⚡ Omni Flash"
+        "Seedanse 2.0 Fast" to "⚡ 60 FPS",
+        "Seedanse 2.5" to "🎬 4K Pro"
       )
 
       Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -2093,7 +2115,7 @@ fun AiContentBottomSheet(
           horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
           videoModels.take(2).forEach { (mName, mBadge) ->
-            val isSelected = chosenModel == mName
+            val isSelected = chosenModel == mName || (mName == "Veo 3" && chosenModel.contains("Veo")) || (mName == "Google Omni Flash" && chosenModel.contains("Omni"))
             Surface(
               onClick = { chosenModel = mName },
               shape = RoundedCornerShape(10.dp),
@@ -2322,13 +2344,44 @@ fun AiContentBottomSheet(
         }
       }
 
+      Spacer(modifier = Modifier.height(12.dp))
+
+      // 5. Длительность видео
+      Text(
+        text = "ДЛИТЕЛЬНОСТЬ ВИДЕО",
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      Spacer(modifier = Modifier.height(6.dp))
+      Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(5 to "5 сек", 10 to "10 сек", 15 to "15 сек").forEach { (sec, label) ->
+          val isSel = chosenDuration == sec
+          Surface(
+            onClick = { chosenDuration = sec },
+            shape = RoundedCornerShape(8.dp),
+            color = if (isSel) accentColor else MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier.weight(1f)
+          ) {
+            Text(
+              text = label,
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold,
+              color = if (isSel) buttonContentColor else MaterialTheme.colorScheme.onSurface,
+              textAlign = TextAlign.Center,
+              modifier = Modifier.padding(vertical = 7.dp)
+            )
+          }
+        }
+      }
+
       Spacer(modifier = Modifier.height(16.dp))
 
       // Кнопка "Сгенерировать видео"
       Button(
         onClick = {
           val finalPrompt = if (videoPrompt.isBlank()) "Видео по запросу" else videoPrompt.trim()
-          onGenerate(finalPrompt, chosenModel, attachedPhotos.toList(), chosenAspect)
+          onGenerate(finalPrompt, chosenModel, attachedPhotos.toList(), chosenAspect, chosenDuration)
         },
         modifier = Modifier
           .fillMaxWidth()
@@ -2344,7 +2397,7 @@ fun AiContentBottomSheet(
         Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = buttonContentColor, modifier = Modifier.size(18.dp))
         Spacer(modifier = Modifier.width(8.dp))
         Text(
-          text = "Сгенерировать видео",
+          text = "Сгенерировать видео ($chosenDuration сек)",
           fontSize = 14.sp,
           fontWeight = FontWeight.Bold,
           color = buttonContentColor
@@ -2505,6 +2558,7 @@ fun ChatMessageItem(
               attachedImages = message.attachedImages,
               visualSceneUrl = message.visualSceneUrl,
               aspectRatio = message.aspectRatio,
+              durationSeconds = message.durationSeconds,
               accentColor = accentColor,
             )
           }
@@ -2613,8 +2667,10 @@ fun VideoGenerationPlayer(
   attachedImages: List<String> = emptyList(),
   visualSceneUrl: String = "",
   aspectRatio: String = "16:9",
+  durationSeconds: Int = 5,
   accentColor: Color,
 ) {
+  val totalDuration = if (durationSeconds > 0) durationSeconds else 5
   val context = LocalContext.current
   val clipboardManager = LocalClipboardManager.current
   val coroutineScope = rememberCoroutineScope()
@@ -2733,7 +2789,7 @@ fun VideoGenerationPlayer(
     initialValue = 0f,
     targetValue = 1f,
     animationSpec = infiniteRepeatable(
-      animation = tween(durationMillis = 8000, easing = LinearEasing),
+      animation = tween(durationMillis = totalDuration * 1000, easing = LinearEasing),
       repeatMode = RepeatMode.Restart
     ),
     label = "PlaybackProgress"
@@ -2754,8 +2810,8 @@ fun VideoGenerationPlayer(
     }
   }
 
-  // Loop speech automatically when video loops around (every 8s)
-  val loopTrigger = (effectiveProgress * 8).toInt()
+  // Loop speech automatically when video loops around
+  val loopTrigger = (effectiveProgress * totalDuration).toInt()
   LaunchedEffect(loopTrigger) {
     if (loopTrigger == 0 && isPlaying && !isMuted && hasSpeech) {
       ttsVoicePlayer.speak(effectiveSpeech)
@@ -2965,7 +3021,7 @@ fun VideoGenerationPlayer(
           .background(Color.Black.copy(alpha = 0.5f), CircleShape)
       ) {
         Icon(
-          imageVector = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+          imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
           contentDescription = if (isMuted) "Включить звук" else "Выключить звук",
           tint = Color.White,
           modifier = Modifier.size(16.dp)
@@ -2991,9 +3047,11 @@ fun VideoGenerationPlayer(
       }
 
       // Таймкод внизу справа
-      val currentSec = (effectiveProgress * 8).toInt().coerceIn(0, 8)
+      val currentSec = (effectiveProgress * totalDuration).toInt().coerceIn(0, totalDuration)
+      val currentSecStr = if (currentSec < 10) "0$currentSec" else "$currentSec"
+      val totalDurationStr = if (totalDuration < 10) "0$totalDuration" else "$totalDuration"
       Text(
-        text = "0:0$currentSec / 0:08",
+        text = "0:$currentSecStr / 0:$totalDurationStr",
         color = Color.White.copy(alpha = 0.9f),
         fontSize = 10.sp,
         fontWeight = FontWeight.Bold,
@@ -3235,8 +3293,6 @@ fun SettingsDialog(
   onThemeChange: (Boolean) -> Unit,
   selectedTitleColor: RainbowTitleColor,
   onSelectTitleColor: (RainbowTitleColor) -> Unit,
-  selectedAiModel: AiModelType,
-  onSelectAiModel: (AiModelType) -> Unit,
   accentColor: Color,
   onDismiss: () -> Unit,
 ) {
@@ -3260,63 +3316,107 @@ fun SettingsDialog(
           .verticalScroll(scrollState),
         verticalArrangement = Arrangement.spacedBy(14.dp),
       ) {
-        Text(
-          text = "Тип искусственного интеллекта",
-          fontSize = 14.sp,
-          fontWeight = FontWeight.SemiBold,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        // Удобный и стильный выбор цвета акцента (все цвета радуги)
+        Column(modifier = Modifier.fillMaxWidth()) {
+          Text(
+            text = "Цвет акцента (Радуга)",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+          )
+          Text(
+            text = "Все 7 цветов спектра + стили",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+          )
+        }
 
-        AiModelType.entries.forEach { model ->
-          val isSelected = model == selectedAiModel
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .clip(RoundedCornerShape(12.dp))
-              .background(
-                if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
-              )
-              .clickable { onSelectAiModel(model) }
-              .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Column(modifier = Modifier.weight(1f)) {
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                  text = model.displayName,
-                  fontSize = 15.sp,
-                  fontWeight = FontWeight.SemiBold,
-                  color = MaterialTheme.colorScheme.onSurface,
+        // Красивая градиентная полоса радуги
+        Box(
+          modifier = Modifier
+            .fillMaxWidth()
+            .height(5.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .background(
+              Brush.horizontalGradient(
+                colors = listOf(
+                  Color(0xFFEF4444),
+                  Color(0xFFF97316),
+                  Color(0xFFFACC15),
+                  Color(0xFF22C55E),
+                  Color(0xFF0EA5E9),
+                  Color(0xFF2563EB),
+                  Color(0xFF8B5CF6),
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Surface(
-                  shape = RoundedCornerShape(6.dp),
-                  color = if (isSelected) accentColor.copy(alpha = 0.2f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                ) {
-                  Text(
-                    text = model.badge,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isSelected && !isWhiteAccent) accentColor else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                  )
-                }
-              }
-              Spacer(modifier = Modifier.height(2.dp))
-              Text(
-                text = model.subtitle,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                lineHeight = 16.sp,
-              )
-            }
-            RadioButton(
-              selected = isSelected,
-              onClick = { onSelectAiModel(model) },
-              colors = RadioButtonDefaults.colors(
-                selectedColor = accentColor,
               )
             )
+        )
+
+        // 2-Column Grid of Color Chips for maximal ease and responsiveness
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          RainbowTitleColor.entries.chunked(2).forEach { pair ->
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+              pair.forEach { colorOption ->
+                val isSelected = colorOption == selectedTitleColor
+                val itemAccent = colorOption.color
+                Surface(
+                  onClick = { onSelectTitleColor(colorOption) },
+                  shape = RoundedCornerShape(12.dp),
+                  color = if (isSelected) itemAccent.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant,
+                  border = androidx.compose.foundation.BorderStroke(
+                    width = if (isSelected) 2.dp else 1.dp,
+                    color = if (isSelected) itemAccent else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                  ),
+                  modifier = Modifier
+                    .weight(1f)
+                    .height(46.dp)
+                ) {
+                  Row(
+                    modifier = Modifier
+                      .fillMaxSize()
+                      .padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Start
+                  ) {
+                    Box(
+                      modifier = Modifier
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(itemAccent)
+                        .border(
+                          1.dp,
+                          if (isSelected) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f) else Color.Transparent,
+                          CircleShape
+                        ),
+                      contentAlignment = Alignment.Center
+                    ) {
+                      if (isSelected) {
+                        Icon(
+                          imageVector = Icons.Default.Check,
+                          contentDescription = null,
+                          tint = if (colorOption.darkTextColor) Color.Black else Color.White,
+                          modifier = Modifier.size(12.dp)
+                        )
+                      }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                      text = colorOption.title,
+                      fontSize = 12.sp,
+                      fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                      color = if (isSelected && !isWhiteAccent) itemAccent else MaterialTheme.colorScheme.onSurface,
+                      maxLines = 1
+                    )
+                  }
+                }
+              }
+              if (pair.size == 1) {
+                Spacer(modifier = Modifier.weight(1f))
+              }
+            }
           }
         }
 

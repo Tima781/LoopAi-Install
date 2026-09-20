@@ -1,6 +1,6 @@
 {
   "name": "LoopAi",
-  "description": "Простое приложение с AI-помощником и экраном чата",
+  "description": "AI-помощник и Видео Студия нового поколения с поддержкой DeepSeek, ChatGPT, Claude, Gemini, Google Omni Flash и Veo 3",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
