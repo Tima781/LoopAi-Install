@@ -14,33 +14,50 @@ android {
   compileSdk = 35
 
   defaultConfig {
-    applicationId = "com.aistudio.loopai.app"
+    applicationId = "com.loopai.fresh.app"
     minSdk = 23
     targetSdk = 34
-    versionCode = 2
-    versionName = "1.1"
+    versionCode = 3
+    versionName = "1.2"
     multiDexEnabled = true
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
   signingConfigs {
-    create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
+    create("releaseConfig") {
+      val rKey = file("${rootDir}/release.keystore")
+      val dKey = file("${rootDir}/debug.keystore")
+      if (rKey.exists()) {
+        storeFile = rKey
+        storePassword = "loopaipass"
+        keyAlias = "loopai"
+        keyPassword = "loopaipass"
+      } else {
+        storeFile = dKey
+        storePassword = "android"
+        keyAlias = "androiddebugkey"
+        keyPassword = "android"
+      }
       enableV1Signing = true
       enableV2Signing = true
       enableV3Signing = true
       enableV4Signing = true
     }
     create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
+      val rKey = file("${rootDir}/release.keystore")
+      val dKey = file("${rootDir}/debug.keystore")
+      if (rKey.exists()) {
+        storeFile = rKey
+        storePassword = "loopaipass"
+        keyAlias = "loopai"
+        keyPassword = "loopaipass"
+      } else {
+        storeFile = dKey
+        storePassword = "android"
+        keyAlias = "androiddebugkey"
+        keyPassword = "android"
+      }
       enableV1Signing = true
       enableV2Signing = true
       enableV3Signing = true
@@ -53,8 +70,7 @@ android {
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      val hasCustomKey = System.getenv("KEYSTORE_PATH") != null
-      signingConfig = if (hasCustomKey) signingConfigs.getByName("release") else signingConfigs.getByName("debugConfig")
+      signingConfig = signingConfigs.getByName("releaseConfig")
     }
     debug {
       signingConfig = signingConfigs.getByName("debugConfig")

@@ -36,8 +36,14 @@ jobs:
         run: |
           touch .env
           touch app/.env
+          if [ -f release.keystore.base64 ]; then
+            base64 --decode release.keystore.base64 > release.keystore 2>/dev/null || base64 -d release.keystore.base64 > release.keystore 2>/dev/null || true
+          fi
           if [ -f debug.keystore.base64 ]; then
             base64 --decode debug.keystore.base64 > debug.keystore 2>/dev/null || base64 -d debug.keystore.base64 > debug.keystore 2>/dev/null || true
+          fi
+          if [ ! -s release.keystore ]; then
+            keytool -genkey -v -keystore release.keystore -storepass loopaipass -alias loopai -keypass loopaipass -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=LoopAi,O=LoopAi,C=US"
           fi
           if [ ! -s debug.keystore ]; then
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
@@ -50,11 +56,18 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      - name: Build Debug APK
-        run: gradle :app:assembleDebug -x test -x lint -x verifyRoborazziDebug --stacktrace --no-daemon
+      - name: Build Release APK
+        run: gradle :app:assembleRelease -x test -x lint -x verifyRoborazziDebug --stacktrace --no-daemon
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk LoopAi.apk
+        run: |
+          if [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            cp app/build/outputs/apk/release/app-release-unsigned.apk LoopAi.apk
+          elif [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            cp app/build/outputs/apk/release/app-release.apk LoopAi.apk
+          else
+            cp app/build/outputs/apk/debug/app-debug.apk LoopAi.apk
+          fi
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
