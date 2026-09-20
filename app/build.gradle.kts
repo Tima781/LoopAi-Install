@@ -15,7 +15,7 @@ android {
 
   defaultConfig {
     applicationId = "com.aistudio.loopai.app"
-    minSdk = 24
+    minSdk = 23
     targetSdk = 34
     versionCode = 2
     versionName = "1.1"
