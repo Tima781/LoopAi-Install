@@ -30,7 +30,7 @@ jobs:
           touch ~/.android/repositories.cfg
           export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
           yes | sdkmanager --licenses || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0" || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" || true
 
       - name: Prepare Keystore and Environment
         run: |
