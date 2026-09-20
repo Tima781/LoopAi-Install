@@ -74,6 +74,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FastForward
@@ -519,14 +520,199 @@ enum class RainbowTitleColor(
   INDIGO("Индиго", Color(0xFF6366F1)),
 }
 
+// Local Persistence Manager for saving and restoring chat messages across app restarts and navigation
+object ChatPersistenceManager {
+  private const val PREFS_NAME = "loopai_chats_storage_v1"
+
+  fun saveMessages(context: android.content.Context, modelType: AiModelType, messages: List<ChatMessage>) {
+    try {
+      val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+      val jsonArray = org.json.JSONArray()
+      messages.forEach { msg ->
+        val obj = org.json.JSONObject().apply {
+          put("id", msg.id)
+          put("text", msg.text)
+          put("isUser", msg.isUser)
+          put("modelType", msg.modelType?.name ?: "")
+          put("isVideo", msg.isVideo)
+          put("videoModel", msg.videoModel ?: "")
+          put("videoSeed", msg.videoSeed)
+          put("attachedImages", org.json.JSONArray(msg.attachedImages))
+          put("visualSceneUrl", msg.visualSceneUrl)
+          put("aspectRatio", msg.aspectRatio)
+          put("motionStyle", msg.motionStyle)
+          put("originalPrompt", msg.originalPrompt)
+          put("speechText", msg.speechText)
+          put("durationSeconds", msg.durationSeconds)
+          put("isGeneratingVideo", false)
+        }
+        jsonArray.put(obj)
+      }
+      prefs.edit().putString("chat_${modelType.name}", jsonArray.toString()).apply()
+    } catch (_: Exception) {}
+  }
+
+  fun loadMessages(context: android.content.Context, modelType: AiModelType): List<ChatMessage> {
+    val result = mutableListOf<ChatMessage>()
+    try {
+      val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+      val raw = prefs.getString("chat_${modelType.name}", null) ?: return emptyList()
+      val jsonArray = org.json.JSONArray(raw)
+      for (i in 0 until jsonArray.length()) {
+        val obj = jsonArray.getJSONObject(i)
+        val imagesList = mutableListOf<String>()
+        if (obj.has("attachedImages")) {
+          val imgArr = obj.getJSONArray("attachedImages")
+          for (j in 0 until imgArr.length()) {
+            imagesList.add(imgArr.getString(j))
+          }
+        }
+        val msgModelTypeStr = obj.optString("modelType", "")
+        val msgModelType = try {
+          if (msgModelTypeStr.isNotEmpty()) AiModelType.valueOf(msgModelTypeStr) else modelType
+        } catch (_: Exception) {
+          modelType
+        }
+
+        result.add(
+          ChatMessage(
+            id = obj.optString("id", UUID.randomUUID().toString()),
+            text = obj.optString("text", ""),
+            isUser = obj.optBoolean("isUser", false),
+            modelType = msgModelType,
+            isVideo = obj.optBoolean("isVideo", false),
+            videoModel = obj.optString("videoModel", null),
+            videoSeed = obj.optLong("videoSeed", System.currentTimeMillis()),
+            attachedImages = imagesList,
+            visualSceneUrl = obj.optString("visualSceneUrl", ""),
+            aspectRatio = obj.optString("aspectRatio", "16:9"),
+            motionStyle = obj.optString("motionStyle", "Кинематографичный зум"),
+            originalPrompt = obj.optString("originalPrompt", ""),
+            speechText = obj.optString("speechText", ""),
+            durationSeconds = obj.optInt("durationSeconds", 5),
+            isGeneratingVideo = false
+          )
+        )
+      }
+    } catch (_: Exception) {}
+    return result
+  }
+
+  fun clearMessages(context: android.content.Context, modelType: AiModelType) {
+    try {
+      val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+      prefs.edit().remove("chat_${modelType.name}").apply()
+    } catch (_: Exception) {}
+  }
+}
+
+// Direct Gemini API Client connecting real Google Generative Language endpoints
+object GeminiApiClient {
+  suspend fun callGeminiApi(
+    userPrompt: String,
+    apiKey: String,
+    modelEndpoint: String = "gemini-2.5-flash"
+  ): String = kotlinx.coroutines.withContext(Dispatchers.IO) {
+    val cleanKey = apiKey.trim()
+    if (cleanKey.isBlank() || cleanKey == "MY_GEMINI_API_KEY") {
+      return@withContext ""
+    }
+    try {
+      val urlStr = "https://generativelanguage.googleapis.com/v1beta/models/$modelEndpoint:generateContent?key=$cleanKey"
+      val url = java.net.URL(urlStr)
+      val connection = url.openConnection() as java.net.HttpURLConnection
+      connection.requestMethod = "POST"
+      connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+      connection.doOutput = true
+      connection.connectTimeout = 15000
+      connection.readTimeout = 20000
+
+      val jsonRequest = org.json.JSONObject().apply {
+        val contentsArray = org.json.JSONArray()
+        val contentObj = org.json.JSONObject().apply {
+          val partsArray = org.json.JSONArray()
+          val partObj = org.json.JSONObject().apply {
+            put("text", userPrompt)
+          }
+          partsArray.put(partObj)
+          put("parts", partsArray)
+        }
+        contentsArray.put(contentObj)
+        put("contents", contentsArray)
+      }
+
+      connection.outputStream.use { os ->
+        os.write(jsonRequest.toString().toByteArray(Charsets.UTF_8))
+      }
+
+      val responseCode = connection.responseCode
+      if (responseCode == 200) {
+        val responseString = connection.inputStream.bufferedReader().use { it.readText() }
+        val responseJson = org.json.JSONObject(responseString)
+        val candidates = responseJson.optJSONArray("candidates")
+        if (candidates != null && candidates.length() > 0) {
+          val firstCand = candidates.getJSONObject(0)
+          val content = firstCand.optJSONObject("content")
+          val parts = content?.optJSONArray("parts")
+          if (parts != null && parts.length() > 0) {
+            val text = parts.getJSONObject(0).optString("text", "")
+            if (text.isNotBlank()) return@withContext text
+          }
+        }
+      }
+    } catch (_: Exception) {}
+    return@withContext ""
+  }
+}
+
+suspend fun generateAiResponseAsync(
+  context: android.content.Context,
+  userPrompt: String,
+  model: AiModelType,
+  mode: ModelMode
+): String {
+  val prefs = context.getSharedPreferences("loopai_app_prefs", android.content.Context.MODE_PRIVATE)
+  val customKey = prefs.getString("custom_gemini_api_key", "")?.trim() ?: ""
+  val apiKeyToUse = if (customKey.isNotBlank()) customKey else BuildConfig.GEMINI_API_KEY
+
+  if (apiKeyToUse.isNotBlank() && apiKeyToUse != "MY_GEMINI_API_KEY") {
+    val modelTag = when (model) {
+      AiModelType.GEMINI -> "gemini-2.5-flash"
+      AiModelType.DEEPSEEK -> "gemini-3.1-pro-preview"
+      AiModelType.CHATGPT -> "gemini-2.5-flash"
+      AiModelType.CLAUDE -> "gemini-3.1-pro-preview"
+      else -> "gemini-2.5-flash"
+    }
+    val realResponse = GeminiApiClient.callGeminiApi(userPrompt, apiKeyToUse, modelTag)
+    if (realResponse.isNotBlank()) {
+      return realResponse
+    }
+  }
+
+  // Smart engine response
+  return generateAiResponse(userPrompt, model, mode)
+}
+
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
+    val prefs = getSharedPreferences("loopai_app_prefs", MODE_PRIVATE)
+    val savedDark = prefs.getBoolean("is_dark_theme", false)
+    val savedColorName = prefs.getString("title_color_name", RainbowTitleColor.BLUE.name) ?: RainbowTitleColor.BLUE.name
+    val initialTitleColor = try { RainbowTitleColor.valueOf(savedColorName) } catch (_: Exception) { RainbowTitleColor.BLUE }
+
     setContent {
-      var isDarkTheme by remember { mutableStateOf(false) }
-      var selectedTitleColor by remember { mutableStateOf(RainbowTitleColor.BLUE) }
+      var isDarkTheme by remember { mutableStateOf(savedDark) }
+      var selectedTitleColor by remember { mutableStateOf(initialTitleColor) }
       var selectedAiModel by remember { mutableStateOf(AiModelType.DEEPSEEK) }
+
+      LaunchedEffect(isDarkTheme) {
+        prefs.edit().putBoolean("is_dark_theme", isDarkTheme).apply()
+      }
+      LaunchedEffect(selectedTitleColor) {
+        prefs.edit().putString("title_color_name", selectedTitleColor.name).apply()
+      }
 
       MyApplicationTheme(isDarkTheme = isDarkTheme) {
         LoopAiApp(
@@ -554,10 +740,25 @@ fun LoopAiApp(
   val context = LocalContext.current
   var currentScreen by remember { mutableStateOf(Screen.Home) }
 
-  // Separate message histories for each model
+  // Separate message histories for each model with persistent storage
   val chatMessagesMap = remember {
     mutableStateMapOf<AiModelType, SnapshotStateList<ChatMessage>>().apply {
-      AiModelType.entries.forEach { put(it, mutableStateListOf()) }
+      AiModelType.entries.forEach { model ->
+        val savedList = ChatPersistenceManager.loadMessages(context, model)
+        put(model, mutableStateListOf<ChatMessage>().apply { addAll(savedList) })
+      }
+    }
+  }
+
+  // Auto-save active chat messages to SharedPreferences whenever updated
+  AiModelType.entries.forEach { model ->
+    val msgs = chatMessagesMap[model]
+    val lastMsgText = msgs?.lastOrNull()?.text
+    val msgSize = msgs?.size ?: 0
+    LaunchedEffect(model, msgSize, lastMsgText) {
+      msgs?.let { list ->
+        ChatPersistenceManager.saveMessages(context, model, list)
+      }
     }
   }
 
@@ -591,7 +792,7 @@ fun LoopAiApp(
       Screen.Chat -> {
         val activeMessages = chatMessagesMap[selectedAiModel] ?: remember { mutableStateListOf() }
 
-        // Start realistic ~2 min video generation workflow
+        // Start fast 3-second neural video generation workflow
         fun startVideoGeneration(
           prompt: String,
           modelName: String,
@@ -601,8 +802,8 @@ fun LoopAiApp(
         ) {
           Toast.makeText(
             context,
-            "Ваше видео ($durationSeconds сек) будет готово через несколько минут, ожидайте...",
-            Toast.LENGTH_LONG
+            "🚀 Генерация видео ($modelName • $durationSeconds сек)...",
+            Toast.LENGTH_SHORT
           ).show()
 
           val sceneUrl = resolveCinematicScene(prompt, photos)
@@ -627,9 +828,9 @@ fun LoopAiApp(
           )
           activeMessages.add(generatingMessage)
 
-          // Launch ~2 minute generation job (120 seconds)
+          // Fast 3-second generation job
           val job = appCoroutineScope.launch {
-            val totalSeconds = 120 // 2 minutes
+            val totalSeconds = 3
             for (sec in 1..totalSeconds) {
               delay(1000)
 
@@ -639,7 +840,15 @@ fun LoopAiApp(
               val currentMsg = activeMessages[index]
               if (!currentMsg.isGeneratingVideo) break
 
-              if (sec >= totalSeconds) {
+              if (sec == 1) {
+                activeMessages[index] = currentMsg.copy(
+                  text = "⚡ [1/3] Обработка 4K нейрокадров и анимации..."
+                )
+              } else if (sec == 2) {
+                activeMessages[index] = currentMsg.copy(
+                  text = "🎬 [2/3] Синтез речи персонажа и липсинк эффектов..."
+                )
+              } else if (sec >= totalSeconds) {
                 activeMessages[index] = currentMsg.copy(
                   text = if (photos.isNotEmpty()) {
                     "Ваше видео ($durationSeconds сек) готово по промпту: «$prompt» на основе ваших фото ($modelName)!"
@@ -652,6 +861,7 @@ fun LoopAiApp(
                   videoSeed = System.currentTimeMillis(),
                 )
                 activeVideoJobs.remove(generatingMsgId)
+                Toast.makeText(context, "✨ Видео $modelName успешно создано!", Toast.LENGTH_SHORT).show()
               }
             }
           }
@@ -740,7 +950,7 @@ fun LoopAiApp(
               isTextGenerating = true
               appCoroutineScope.launch {
                 delay(700)
-                val response = generateAiResponse(text, selectedAiModel, mode)
+                val response = generateAiResponseAsync(context, text, selectedAiModel, mode)
                 activeMessages.add(
                   ChatMessage(
                     text = response,
@@ -788,6 +998,11 @@ fun LoopAiApp(
           onBack = { currentScreen = Screen.Home },
           onOpenSettings = { showSettingsDialog = true },
           onSelectAiModel = onSelectAiModel,
+          onClearChat = {
+            activeMessages.clear()
+            ChatPersistenceManager.clearMessages(context, selectedAiModel)
+            Toast.makeText(context, "История чата очищена", Toast.LENGTH_SHORT).show()
+          },
         )
       }
     }
@@ -928,6 +1143,7 @@ fun ChatScreen(
   onBack: () -> Unit,
   onOpenSettings: () -> Unit,
   onSelectAiModel: (AiModelType) -> Unit,
+  onClearChat: () -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   val isVideoMode = selectedAiModel.isVideoModel
@@ -936,13 +1152,51 @@ fun ChatScreen(
   var inputText by remember { mutableStateOf("") }
   var currentMode by remember { mutableStateOf(ModelMode.FAST) }
   var showAiContentSheet by remember { mutableStateOf(false) }
-  var showWebsiteDialog by remember { mutableStateOf(false) }
 
   val listState = rememberLazyListState()
   val coroutineScope = rememberCoroutineScope()
   val keyboardController = LocalSoftwareKeyboardController.current
   val isWhiteAccent = accentColor == Color.White
   val buttonContentColor = if (isWhiteAccent) Color.Black else Color.White
+
+  val triggerShareApk: () -> Unit = {
+    coroutineScope.launch(Dispatchers.IO) {
+      try {
+        val sourceApk = File(context.applicationInfo.sourceDir)
+        val targetApk = File(context.cacheDir, "LoopAi_v1.0.apk")
+        if (sourceApk.exists()) {
+          sourceApk.inputStream().use { input ->
+            targetApk.outputStream().use { output ->
+              input.copyTo(output)
+            }
+          }
+        }
+        kotlinx.coroutines.withContext(Dispatchers.Main) {
+          try {
+            val apkUri: Uri = if (targetApk.exists()) {
+              FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", targetApk)
+            } else {
+              Uri.parse("https://ai.studio")
+            }
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+              type = "application/vnd.android.package-archive"
+              putExtra(Intent.EXTRA_STREAM, apkUri)
+              putExtra(Intent.EXTRA_SUBJECT, "LoopAi APK Installer")
+              putExtra(Intent.EXTRA_TEXT, "Установочный APK файл приложения LoopAi. Отправлено из LoopAi.")
+              addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(Intent.createChooser(shareIntent, "Поделиться APK файлом LoopAi"))
+          } catch (e: Exception) {
+            Toast.makeText(context, "Не удалось открыть меню отправки", Toast.LENGTH_SHORT).show()
+          }
+        }
+      } catch (e: Exception) {
+        kotlinx.coroutines.withContext(Dispatchers.Main) {
+          Toast.makeText(context, "Ошибка при подготовке APK", Toast.LENGTH_SHORT).show()
+        }
+      }
+    }
+  }
 
   val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
 
@@ -1205,35 +1459,18 @@ fun ChatScreen(
 
         NavigationDrawerItem(
           label = {
-            Row(
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.SpaceBetween,
-              modifier = Modifier.fillMaxWidth()
-            ) {
-              Text(
-                text = "Сайт приложения",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-              )
-              Surface(
-                shape = RoundedCornerShape(4.dp),
-                color = if (isWhiteAccent) MaterialTheme.colorScheme.primary else accentColor,
-              ) {
-                Text(
-                  text = "WEB",
-                  fontSize = 10.sp,
-                  fontWeight = FontWeight.Bold,
-                  color = Color.White,
-                  modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                )
-              }
-            }
+            Text(
+              text = "Очистить историю чата",
+              fontSize = 15.sp,
+              fontWeight = FontWeight.Medium,
+              color = MaterialTheme.colorScheme.error,
+            )
           },
           icon = {
             Icon(
-              imageVector = Icons.Default.Language,
-              contentDescription = null,
-              tint = if (isWhiteAccent) MaterialTheme.colorScheme.onSurface else accentColor,
+              imageVector = Icons.Default.Delete,
+              contentDescription = "Очистить чат",
+              tint = MaterialTheme.colorScheme.error,
               modifier = Modifier.size(22.dp),
             )
           },
@@ -1241,15 +1478,15 @@ fun ChatScreen(
           onClick = {
             coroutineScope.launch {
               drawerState.close()
-              showWebsiteDialog = true
+              onClearChat()
             }
           },
           modifier = Modifier
             .padding(horizontal = 12.dp, vertical = 4.dp)
-            .testTag("drawer_website_button"),
+            .testTag("drawer_clear_chat_button"),
           colors = NavigationDrawerItemDefaults.colors(
             unselectedContainerColor = Color.Transparent,
-            unselectedTextColor = MaterialTheme.colorScheme.onSurface,
+            unselectedTextColor = MaterialTheme.colorScheme.error,
           ),
         )
 
@@ -1409,12 +1646,12 @@ fun ChatScreen(
           },
           actions = {
             IconButton(
-              onClick = { showWebsiteDialog = true },
-              modifier = Modifier.testTag("top_website_btn")
+              onClick = { triggerShareApk() },
+              modifier = Modifier.testTag("top_share_apk_btn")
             ) {
               Icon(
-                imageVector = Icons.Default.Language,
-                contentDescription = "Сайт приложения",
+                imageVector = Icons.Default.Share,
+                contentDescription = "Поделиться APK",
                 tint = if (isWhiteAccent) MaterialTheme.colorScheme.onSurface else accentColor
               )
             }
@@ -1798,227 +2035,6 @@ fun ChatScreen(
         }
       }
     )
-  }
-
-  if (showWebsiteDialog) {
-    WebLandingDialog(
-      onDismiss = { showWebsiteDialog = false },
-      accentColor = accentColor,
-    )
-  }
-}
-
-@Composable
-fun WebLandingDialog(onDismiss: () -> Unit, accentColor: Color) {
-  val isWhiteAccent = accentColor == Color.White
-  val context = androidx.compose.ui.platform.LocalContext.current
-  val coroutineScope = rememberCoroutineScope()
-
-  val triggerApkDownload = {
-    coroutineScope.launch(Dispatchers.IO) {
-      try {
-        val sourceApk = File(context.applicationInfo.sourceDir)
-        val targetApk = File(context.cacheDir, "LoopAi_v1.0_Beta.apk")
-        val downloadsDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)
-        val publicApk = if (downloadsDir != null) File(downloadsDir, "LoopAi.apk") else null
-
-        if (sourceApk.exists()) {
-          sourceApk.inputStream().use { input ->
-            targetApk.outputStream().use { output ->
-              input.copyTo(output)
-            }
-          }
-          if (publicApk != null) {
-            sourceApk.inputStream().use { input ->
-              publicApk.outputStream().use { output ->
-                input.copyTo(output)
-              }
-            }
-          }
-        }
-
-        kotlinx.coroutines.withContext(Dispatchers.Main) {
-          Toast.makeText(context, "APK готов! Запуск установщика Android...", Toast.LENGTH_SHORT).show()
-          try {
-            val apkUri: Uri = if (targetApk.exists()) {
-              FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                targetApk
-              )
-            } else {
-              Uri.parse("https://ai.studio")
-            }
-
-            val installIntent = Intent(Intent.ACTION_VIEW).apply {
-              setDataAndType(apkUri, "application/vnd.android.package-archive")
-              addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-              addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-              addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            }
-
-            try {
-              context.startActivity(installIntent)
-            } catch (_: Exception) {
-              val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "application/vnd.android.package-archive"
-                putExtra(Intent.EXTRA_STREAM, apkUri)
-                putExtra(Intent.EXTRA_SUBJECT, "LoopAi APK Installer v1.0 (Beta)")
-                putExtra(Intent.EXTRA_TEXT, "Установочный APK файл LoopAi v1.0 (Beta).")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-              }
-              context.startActivity(Intent.createChooser(shareIntent, "Установить / Сохранить LoopAi APK"))
-            }
-          } catch (e: Exception) {
-            Toast.makeText(context, "APK сформирован в памяти: LoopAi_v1.0_Beta.apk", Toast.LENGTH_LONG).show()
-          }
-        }
-      } catch (e: Exception) {
-        kotlinx.coroutines.withContext(Dispatchers.Main) {
-          Toast.makeText(context, "APK сформирован: LoopAi_v1.0_Beta.apk", Toast.LENGTH_SHORT).show()
-        }
-      }
-    }
-  }
-
-  val triggerApkShare = {
-    coroutineScope.launch(Dispatchers.IO) {
-      try {
-        val sourceApk = File(context.applicationInfo.sourceDir)
-        val targetApk = File(context.cacheDir, "LoopAi_v1.0_Beta.apk")
-        if (sourceApk.exists()) {
-          sourceApk.inputStream().use { input ->
-            targetApk.outputStream().use { output ->
-              input.copyTo(output)
-            }
-          }
-        }
-
-        kotlinx.coroutines.withContext(Dispatchers.Main) {
-          try {
-            val apkUri: Uri = if (targetApk.exists()) {
-              FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                targetApk
-              )
-            } else {
-              Uri.parse("https://ai.studio")
-            }
-
-            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-              type = "application/vnd.android.package-archive"
-              putExtra(Intent.EXTRA_STREAM, apkUri)
-              putExtra(Intent.EXTRA_SUBJECT, "LoopAi APK файл v1.0 (Beta)")
-              putExtra(Intent.EXTRA_TEXT, "Установочный APK файл приложения LoopAi v1.0 (Beta).")
-              addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(Intent.createChooser(shareIntent, "Поделиться APK файлом LoopAi"))
-          } catch (_: Exception) {
-            Toast.makeText(context, "Не удалось открыть диалог", Toast.LENGTH_SHORT).show()
-          }
-        }
-      } catch (_: Exception) {
-        kotlinx.coroutines.withContext(Dispatchers.Main) {
-          Toast.makeText(context, "Ошибка при подготовке APK", Toast.LENGTH_SHORT).show()
-        }
-      }
-    }
-  }
-
-  androidx.compose.ui.window.Dialog(
-    onDismissRequest = onDismiss,
-    properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
-  ) {
-    Surface(
-      modifier = Modifier
-        .fillMaxSize()
-        .statusBarsPadding()
-        .navigationBarsPadding(),
-      color = Color(0xFF070B14)
-    ) {
-      Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-          modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0xFF10182C))
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-              modifier = Modifier
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(if (isWhiteAccent) Color.White else accentColor),
-              contentAlignment = Alignment.Center
-            ) {
-              Icon(
-                imageVector = Icons.Default.Language,
-                contentDescription = null,
-                tint = if (isWhiteAccent) Color.Black else Color.White,
-                modifier = Modifier.size(20.dp)
-              )
-            }
-            Spacer(modifier = Modifier.width(10.dp))
-            Column {
-              Text(
-                text = "Официальный сайт LoopAi",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-              )
-              Text(
-                text = "https://loopai.app (Загрузка APK)",
-                fontSize = 11.5.sp,
-                color = Color(0xFF94A3B8)
-              )
-            }
-          }
-
-          IconButton(
-            onClick = onDismiss,
-            modifier = Modifier.size(36.dp)
-          ) {
-            Icon(
-              imageVector = Icons.Default.Close,
-              contentDescription = "Закрыть",
-              tint = Color.White
-            )
-          }
-        }
-
-        AndroidView(
-          modifier = Modifier.fillMaxSize(),
-          factory = { ctx ->
-            WebView(ctx).apply {
-              layoutParams = android.view.ViewGroup.LayoutParams(
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT
-              )
-              settings.javaScriptEnabled = true
-              settings.domStorageEnabled = true
-              settings.allowFileAccess = true
-              settings.loadWithOverviewMode = true
-              settings.useWideViewPort = true
-              addJavascriptInterface(object {
-                @JavascriptInterface
-                fun downloadApk() {
-                  triggerApkDownload()
-                }
-                @JavascriptInterface
-                fun shareApk() {
-                  triggerApkShare()
-                }
-              }, "AndroidBridge")
-              webViewClient = WebViewClient()
-              loadUrl("file:///android_asset/landing_page.html")
-            }
-          }
-        )
-      }
-    }
   }
 }
 
@@ -3496,6 +3512,87 @@ fun SettingsDialog(
               selectedColor = accentColor,
             )
           )
+        }
+
+        HorizontalDivider(
+          modifier = Modifier.padding(vertical = 4.dp),
+          color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+        )
+
+        val context = LocalContext.current
+        val prefs = remember { context.getSharedPreferences("loopai_app_prefs", android.content.Context.MODE_PRIVATE) }
+        var customApiKeyInput by remember { mutableStateOf(prefs.getString("custom_gemini_api_key", "") ?: "") }
+        val effectiveApiKey = if (customApiKeyInput.isNotBlank()) customApiKeyInput else BuildConfig.GEMINI_API_KEY
+        val isApiConnected = effectiveApiKey.isNotBlank() && effectiveApiKey != "MY_GEMINI_API_KEY"
+
+        // Раздел Подключение Gemini API
+        Surface(
+          shape = RoundedCornerShape(12.dp),
+          color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+          border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (isApiConnected) Color(0xFF4CAF50).copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+          ),
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                  imageVector = Icons.Default.Bolt,
+                  contentDescription = null,
+                  tint = if (isApiConnected) Color(0xFF4CAF50) else accentColor,
+                  modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                  text = "ПОДКЛЮЧЕНИЕ GEMINI API",
+                  fontSize = 11.5.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = MaterialTheme.colorScheme.onSurface
+                )
+              }
+              Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = if (isApiConnected) Color(0xFF1B5E20) else MaterialTheme.colorScheme.surfaceVariant
+              ) {
+                Text(
+                  text = if (isApiConnected) "🟢 Подключено" else "⚪ Офлайн движок",
+                  fontSize = 10.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = if (isApiConnected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+              }
+            }
+
+            OutlinedTextField(
+              value = customApiKeyInput,
+              onValueChange = {
+                customApiKeyInput = it
+                prefs.edit().putString("custom_gemini_api_key", it.trim()).apply()
+              },
+              placeholder = { Text("Вставьте ваш API Key (AI Studio)") },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth().testTag("custom_gemini_api_key_input"),
+              colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = accentColor,
+              )
+            )
+            Text(
+              text = "При наличии ключа приложение отправляет запросы напрямую в нейросети Google Gemini.",
+              fontSize = 10.5.sp,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              lineHeight = 14.sp
+            )
+          }
         }
 
         HorizontalDivider(
