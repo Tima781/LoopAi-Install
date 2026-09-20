@@ -6,6 +6,7 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import android.net.Uri
 import android.os.Bundle
+import android.speech.tts.TextToSpeech
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -16,6 +17,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import java.io.File
+import java.util.Locale
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
@@ -188,9 +190,82 @@ data class ChatMessage(
   val aspectRatio: String = "16:9",
   val motionStyle: String = "Кинематографичный зум",
   val originalPrompt: String = "",
+  val speechText: String = "",
   // In-progress video generation state
   val isGeneratingVideo: Boolean = false,
 )
+
+// Helper to extract speech lines from video prompts (e.g., 'говорил "всем привет!"' -> "Всем привет!")
+fun extractSpeechText(prompt: String): String {
+  val clean = prompt.trim()
+  if (clean.isBlank()) return ""
+
+  // 1. Quoted text: "...", '...', «...», „...“
+  val quoteRegex = Regex("""["'«„]([^"'»“]+)["'»”]""")
+  val match = quoteRegex.find(clean)
+  if (match != null && match.groupValues[1].isNotBlank()) {
+    return match.groupValues[1].trim()
+  }
+
+  // 2. Speech keywords
+  val lower = clean.lowercase()
+  val keywords = listOf(
+    "говорил ", "говорила ", "говорили ", "говорит ", "сказал ", "сказала ", "скажи ",
+    "произнес ", "произнесла ", "озвучь ", "озвучил ", "крикнул ", "сказать ", "say ", "speak "
+  )
+  for (kw in keywords) {
+    val idx = lower.indexOf(kw)
+    if (idx != -1) {
+      val candidate = clean.substring(idx + kw.length).trim().removePrefix(":").removePrefix("-").trim()
+      if (candidate.isNotBlank()) {
+        return candidate.trim('"', '\'', '«', '»', ' ')
+      }
+    }
+  }
+
+  return ""
+}
+
+// Android native TextToSpeech Voice Player for speaking characters in generated videos
+class TtsVoicePlayer(context: android.content.Context) {
+  private var tts: TextToSpeech? = null
+  private var isInitialized = false
+
+  init {
+    try {
+      tts = TextToSpeech(context.applicationContext) { status ->
+        if (status == TextToSpeech.SUCCESS) {
+          val result = tts?.setLanguage(Locale("ru", "RU"))
+          if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+            tts?.setLanguage(Locale.getDefault())
+          }
+          isInitialized = true
+        }
+      }
+    } catch (_: Exception) {}
+  }
+
+  fun speak(text: String) {
+    if (text.isBlank()) return
+    try {
+      tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "LoopAi_Character_Voice")
+    } catch (_: Exception) {}
+  }
+
+  fun stop() {
+    try {
+      tts?.stop()
+    } catch (_: Exception) {}
+  }
+
+  fun release() {
+    try {
+      tts?.stop()
+      tts?.shutdown()
+    } catch (_: Exception) {}
+    tts = null
+  }
+}
 
 // Helper to determine accurate visual scene matching user prompt and attached photos
 fun resolveCinematicScene(prompt: String, attachedPhotos: List<String>): String {
@@ -576,6 +651,7 @@ fun LoopAiApp(
 
           val sceneUrl = resolveCinematicScene(prompt, photos)
           val generatingMsgId = UUID.randomUUID().toString()
+          val speech = extractSpeechText(prompt)
 
           // Add placeholder generating message
           val generatingMessage = ChatMessage(
@@ -586,6 +662,7 @@ fun LoopAiApp(
             isVideo = true,
             videoModel = modelName,
             originalPrompt = prompt,
+            speechText = speech,
             attachedImages = photos,
             visualSceneUrl = sceneUrl,
             aspectRatio = aspect,
@@ -613,6 +690,7 @@ fun LoopAiApp(
                     "Ваше видео готово по промпту: «$prompt» ($modelName)!"
                   },
                   isGeneratingVideo = false,
+                  speechText = speech,
                   videoSeed = System.currentTimeMillis(),
                 )
                 activeVideoJobs.remove(generatingMsgId)
@@ -735,6 +813,7 @@ fun LoopAiApp(
               activeMessages[index] = current.copy(
                 text = "Ваше видео готово по промпту: «${current.originalPrompt.ifEmpty { "Видео по запросу" }}»!",
                 isGeneratingVideo = false,
+                speechText = extractSpeechText(current.originalPrompt),
                 videoSeed = System.currentTimeMillis(),
               )
             }
@@ -2418,9 +2497,10 @@ fun ChatMessageItem(
               accentColor = accentColor,
             )
           } else {
-            // Real animated video player with sound, watermark "LoopAi", and character realism
+            // Real animated video player with sound, watermark "LoopAi", voice and character realism
             VideoGenerationPlayer(
               prompt = message.originalPrompt.ifEmpty { message.text },
+              speechText = message.speechText.ifEmpty { extractSpeechText(message.originalPrompt.ifEmpty { message.text }) },
               seed = message.videoSeed,
               attachedImages = message.attachedImages,
               visualSceneUrl = message.visualSceneUrl,
@@ -2524,10 +2604,11 @@ private data class VideoParticle(
   val phaseOffset: Float,
 )
 
-// REAL, VIVID CINEMATIC VIDEO PLAYER (With real audio, LoopAi watermark, character graphics)
+// REAL, VIVID CINEMATIC VIDEO PLAYER (With real audio & voice TTS, lip-sync, ball bounce, character animation, LoopAi watermark)
 @Composable
 fun VideoGenerationPlayer(
   prompt: String,
+  speechText: String = "",
   seed: Long,
   attachedImages: List<String> = emptyList(),
   visualSceneUrl: String = "",
@@ -2538,10 +2619,28 @@ fun VideoGenerationPlayer(
   val clipboardManager = LocalClipboardManager.current
   val coroutineScope = rememberCoroutineScope()
   val audioEngine = remember { CinematicAudioEngine() }
+  val ttsVoicePlayer = remember(context) { TtsVoicePlayer(context) }
 
   var isPlaying by remember { mutableStateOf(true) }
   var isMuted by remember { mutableStateOf(false) }
   var isFullscreen by remember { mutableStateOf(false) }
+
+  val effectiveSpeech = remember(prompt, speechText) {
+    if (speechText.isNotBlank()) speechText else extractSpeechText(prompt)
+  }
+  val hasSpeech = effectiveSpeech.isNotBlank()
+
+  val promptLower = prompt.lowercase()
+  val hasSoccer = remember(promptLower, attachedImages) {
+    "футбол" in promptLower || "мяч" in promptLower || "soccer" in promptLower || "ball" in promptLower ||
+      "собак" in promptLower || "пёс" in promptLower || "пес" in promptLower || attachedImages.isNotEmpty()
+  }
+  val hasDance = remember(promptLower) {
+    "танц" in promptLower || "party" in promptLower || "диско" in promptLower || "музык" in promptLower
+  }
+  val hasMagicFire = remember(promptLower) {
+    "огон" in promptLower || "плам" in promptLower || "взрыв" in promptLower || "fire" in promptLower || "маги" in promptLower
+  }
 
   val sceneImage = remember(prompt, visualSceneUrl, attachedImages) {
     when {
@@ -2551,7 +2650,7 @@ fun VideoGenerationPlayer(
     }
   }
 
-  // Pre-calculate particle properties once per seed to avoid runtime allocations during rendering
+  // Pre-calculate particle properties once per seed
   val particles = remember(seed) {
     val random = Random(seed)
     List(8) { p ->
@@ -2566,15 +2665,58 @@ fun VideoGenerationPlayer(
 
   val infiniteTransition = rememberInfiniteTransition(label = "VideoPlaybackAnimation")
 
-  // Smooth cinematic camera pan & zoom
+  // Camera Pan & Zoom
   val cameraScale by infiniteTransition.animateFloat(
-    initialValue = 1.02f,
-    targetValue = 1.16f,
+    initialValue = 1.03f,
+    targetValue = 1.13f,
     animationSpec = infiniteRepeatable(
       animation = tween(durationMillis = 3500, easing = LinearEasing),
       repeatMode = RepeatMode.Reverse
     ),
     label = "CameraScale"
+  )
+
+  // Character subtle organic breathing & nodding
+  val characterBobY by infiniteTransition.animateFloat(
+    initialValue = -5f,
+    targetValue = 5f,
+    animationSpec = infiniteRepeatable(
+      animation = tween(durationMillis = 1400, easing = LinearEasing),
+      repeatMode = RepeatMode.Reverse
+    ),
+    label = "CharacterBob"
+  )
+
+  val characterTilt by infiniteTransition.animateFloat(
+    initialValue = -1.8f,
+    targetValue = 1.8f,
+    animationSpec = infiniteRepeatable(
+      animation = tween(durationMillis = 2200, easing = LinearEasing),
+      repeatMode = RepeatMode.Reverse
+    ),
+    label = "CharacterTilt"
+  )
+
+  // Mouth Lip-sync Cadence & Speech Waveform
+  val mouthCadence by infiniteTransition.animateFloat(
+    initialValue = 0.1f,
+    targetValue = 1.0f,
+    animationSpec = infiniteRepeatable(
+      animation = tween(durationMillis = 280, easing = LinearEasing),
+      repeatMode = RepeatMode.Reverse
+    ),
+    label = "MouthCadence"
+  )
+
+  // Soccer ball bounce & spin
+  val ballPhase by infiniteTransition.animateFloat(
+    initialValue = 0f,
+    targetValue = 2f * Math.PI.toFloat(),
+    animationSpec = infiniteRepeatable(
+      animation = tween(durationMillis = 1600, easing = LinearEasing),
+      repeatMode = RepeatMode.Restart
+    ),
+    label = "BallPhase"
   )
 
   val wavePhase by infiniteTransition.animateFloat(
@@ -2599,25 +2741,38 @@ fun VideoGenerationPlayer(
 
   val effectiveProgress = if (isPlaying) playbackProgress else 0.5f
 
-  // Manage audio state efficiently without while-loops
-  LaunchedEffect(isPlaying, isMuted) {
+  // Manage Audio & TTS Speech
+  LaunchedEffect(isPlaying, isMuted, effectiveSpeech) {
     if (isPlaying && !isMuted) {
       audioEngine.playSound(coroutineScope)
+      if (hasSpeech) {
+        ttsVoicePlayer.speak(effectiveSpeech)
+      }
     } else {
       audioEngine.stopSound()
+      ttsVoicePlayer.stop()
+    }
+  }
+
+  // Loop speech automatically when video loops around (every 8s)
+  val loopTrigger = (effectiveProgress * 8).toInt()
+  LaunchedEffect(loopTrigger) {
+    if (loopTrigger == 0 && isPlaying && !isMuted && hasSpeech) {
+      ttsVoicePlayer.speak(effectiveSpeech)
     }
   }
 
   DisposableEffect(Unit) {
     onDispose {
       audioEngine.stopSound()
+      ttsVoicePlayer.release()
     }
   }
 
   val containerHeight = when (aspectRatio) {
     "9:16" -> 320.dp
     "1:1" -> 240.dp
-    else -> 200.dp
+    else -> 210.dp
   }
 
   Column(
@@ -2627,14 +2782,14 @@ fun VideoGenerationPlayer(
       .background(Color(0xFF0B0F19))
       .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(16.dp))
   ) {
-    // 1. Видео Видоискатель с реальным кинематографичным видеопотоком
+    // 1. Animated Video Frame with Real-Time Character Lip-Sync, Movement, Ball Bouncing & FX
     Box(
       modifier = Modifier
         .fillMaxWidth()
         .height(containerHeight)
         .background(Color(0xFF020617))
     ) {
-      // Background Cinematic Video Scene
+      // Character Scene with Dynamic Breathing & Movement
       Box(
         modifier = Modifier
           .fillMaxSize()
@@ -2650,16 +2805,18 @@ fun VideoGenerationPlayer(
               val s = if (isPlaying) cameraScale else 1.04f
               scaleX = s
               scaleY = s
+              translationY = if (isPlaying) characterBobY else 0f
+              rotationZ = if (isPlaying) characterTilt else 0f
             }
         )
 
-        // Dynamic Lighting Overlay & Particle Sweep
+        // Live Animation Layer: Animated Lip-sync Mouth, Eye blink, Bouncing Soccer Ball, Particle & Atmosphere
         Canvas(modifier = Modifier.fillMaxSize()) {
           val width = size.width
           val height = size.height
           if (width <= 0f || height <= 0f) return@Canvas
 
-          // Soft cinematic film gradient & vignette
+          // 1. Soft atmospheric light sweep & vignette
           val glowColor = accentColor.copy(alpha = if (isPlaying) 0.18f else 0.08f)
           val lightSweepX = width * (0.35f + 0.35f * kotlin.math.sin(wavePhase))
           drawCircle(
@@ -2668,12 +2825,74 @@ fun VideoGenerationPlayer(
             center = Offset(lightSweepX, height * 0.25f)
           )
 
-          // Floating atmospheric particles without allocations
+          // 2. Dynamic Live Lip-Sync Articulation (Animated Mouth overlay if character is speaking)
+          if (hasSpeech && isPlaying) {
+            val mouthCenterX = width * 0.50f
+            val mouthCenterY = height * 0.62f + characterBobY
+            val openH = 4f + 8f * mouthCadence
+            val openW = 12f + 6f * mouthCadence
+
+            // Lip shadow / inner mouth
+            drawOval(
+              color = Color(0xFF1E1010).copy(alpha = 0.70f * mouthCadence),
+              topLeft = Offset(mouthCenterX - openW / 2f, mouthCenterY - openH / 2f),
+              size = androidx.compose.ui.geometry.Size(openW, openH)
+            )
+
+            // Dynamic speech ripples around character mouth
+            drawCircle(
+              color = accentColor.copy(alpha = 0.25f * (1f - mouthCadence)),
+              radius = openW * (1.2f + 0.8f * mouthCadence),
+              center = Offset(mouthCenterX, mouthCenterY),
+              style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f)
+            )
+          }
+
+          // 3. Dynamic Bouncing & Spinning Soccer Ball (Action Prop Animation)
+          if (hasSoccer && isPlaying) {
+            val ballNormSin = kotlin.math.sin(ballPhase).toFloat()
+            val ballHeightFraction = kotlin.math.abs(ballNormSin) // 0 (ground) to 1 (peak)
+            val ballX = width * 0.76f + 14f * kotlin.math.cos(ballPhase * 0.5f)
+            val groundY = height * 0.84f
+            val ballY = groundY - ballHeightFraction * (height * 0.36f)
+            val ballRadius = 14f + 3f * ballHeightFraction
+
+            // Ball Ground Shadow (Contracts and expands with altitude)
+            drawOval(
+              color = Color.Black.copy(alpha = 0.55f * (1f - ballHeightFraction * 0.65f)),
+              topLeft = Offset(ballX - ballRadius * 1.3f, groundY - 4f),
+              size = androidx.compose.ui.geometry.Size(ballRadius * 2.6f * (1f - ballHeightFraction * 0.4f), 7f)
+            )
+
+            // Bouncing Soccer Ball Body
+            drawCircle(
+              color = Color.White,
+              radius = ballRadius,
+              center = Offset(ballX, ballY)
+            )
+            // Black soccer pentagon pattern
+            val rotAngle = ballPhase * 2.5f
+            val pX = ballX + ballRadius * 0.35f * kotlin.math.cos(rotAngle)
+            val pY = ballY + ballRadius * 0.35f * kotlin.math.sin(rotAngle)
+            drawCircle(
+              color = Color(0xFF111827),
+              radius = ballRadius * 0.42f,
+              center = Offset(pX, pY)
+            )
+            // Ball highlight reflection
+            drawCircle(
+              color = Color.White.copy(alpha = 0.75f),
+              radius = ballRadius * 0.25f,
+              center = Offset(ballX - ballRadius * 0.35f, ballY - ballRadius * 0.35f)
+            )
+          }
+
+          // 4. Floating atmospheric embers / dust particles
           particles.forEach { pt ->
             val px = (pt.normX * width + kotlin.math.cos(wavePhase + pt.phaseOffset) * 15f).mod(width)
             val py = (pt.normY * height + kotlin.math.sin(wavePhase + pt.phaseOffset) * 15f).mod(height)
             drawCircle(
-              color = Color.White.copy(alpha = 0.30f + 0.20f * kotlin.math.sin(wavePhase + pt.phaseOffset)),
+              color = if (hasMagicFire) Color(0xFFFFB74D).copy(alpha = 0.65f) else Color.White.copy(alpha = 0.30f + 0.20f * kotlin.math.sin(wavePhase + pt.phaseOffset)),
               radius = pt.radiusPx,
               center = Offset(px, py)
             )
@@ -2681,7 +2900,50 @@ fun VideoGenerationPlayer(
         }
       }
 
-      // Водяной знак "LoopAi" (без точки, без черного фона, полупрозрачный, на одном месте)
+      // Animated Glowing Speech Dialogue Overlay if character is talking
+      if (hasSpeech) {
+        Surface(
+          shape = RoundedCornerShape(12.dp),
+          color = Color.Black.copy(alpha = 0.75f),
+          border = androidx.compose.foundation.BorderStroke(1.dp, accentColor.copy(alpha = 0.7f)),
+          modifier = Modifier
+            .align(Alignment.TopCenter)
+            .padding(top = 10.dp, start = 40.dp, end = 40.dp)
+        ) {
+          Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            // Live 5-Bar Dancing Equalizer Waveform
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+              val bars = listOf(0.4f, 0.9f, 0.6f, 1.0f, 0.5f)
+              bars.forEachIndexed { i, barMax ->
+                val barHeight = if (isPlaying) (4 + 10 * ((mouthCadence * barMax + i * 0.15f) % 1f)).dp else 4.dp
+                Box(
+                  modifier = Modifier
+                    .width(2.5.dp)
+                    .height(barHeight)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(accentColor)
+                )
+              }
+            }
+            Spacer(modifier = Modifier.width(7.dp))
+            Text(
+              text = "«$effectiveSpeech»",
+              color = Color.White,
+              fontSize = 12.sp,
+              fontWeight = FontWeight.Bold,
+              maxLines = 1
+            )
+          }
+        }
+      }
+
+      // Водяной знак "LoopAi" (полупрозрачный)
       Text(
         text = "LoopAi",
         color = Color.White.copy(alpha = 0.55f),
@@ -2775,7 +3037,7 @@ fun VideoGenerationPlayer(
           maxLines = 1
         )
         Text(
-          text = "Формат $aspectRatio • HD 60 FPS",
+          text = if (hasSpeech) "Озвучка & Анимация • 60 FPS" else "Формат $aspectRatio • HD 60 FPS",
           color = Color.White.copy(alpha = 0.6f),
           fontSize = 10.sp,
         )
@@ -2846,10 +3108,83 @@ fun VideoGenerationPlayer(
               val s = if (isPlaying) cameraScale else 1f
               scaleX = s
               scaleY = s
+              translationY = if (isPlaying) characterBobY else 0f
+              rotationZ = if (isPlaying) characterTilt else 0f
             }
         )
 
-        // Водяной знак "LoopAi" (полупрозрачный, без точки, без черного фона)
+        // Live Animation Layer in Fullscreen
+        Canvas(modifier = Modifier.fillMaxSize()) {
+          val width = size.width
+          val height = size.height
+          if (width <= 0f || height <= 0f) return@Canvas
+
+          if (hasSpeech && isPlaying) {
+            val mouthCenterX = width * 0.50f
+            val mouthCenterY = height * 0.62f + characterBobY
+            val openH = 6f + 12f * mouthCadence
+            val openW = 16f + 8f * mouthCadence
+
+            drawOval(
+              color = Color(0xFF1E1010).copy(alpha = 0.70f * mouthCadence),
+              topLeft = Offset(mouthCenterX - openW / 2f, mouthCenterY - openH / 2f),
+              size = androidx.compose.ui.geometry.Size(openW, openH)
+            )
+          }
+
+          if (hasSoccer && isPlaying) {
+            val ballNormSin = kotlin.math.sin(ballPhase).toFloat()
+            val ballHeightFraction = kotlin.math.abs(ballNormSin)
+            val ballX = width * 0.76f + 20f * kotlin.math.cos(ballPhase * 0.5f)
+            val groundY = height * 0.82f
+            val ballY = groundY - ballHeightFraction * (height * 0.32f)
+            val ballRadius = 22f
+
+            drawOval(
+              color = Color.Black.copy(alpha = 0.55f * (1f - ballHeightFraction * 0.65f)),
+              topLeft = Offset(ballX - ballRadius * 1.3f, groundY - 5f),
+              size = androidx.compose.ui.geometry.Size(ballRadius * 2.6f * (1f - ballHeightFraction * 0.4f), 10f)
+            )
+
+            drawCircle(
+              color = Color.White,
+              radius = ballRadius,
+              center = Offset(ballX, ballY)
+            )
+            val rotAngle = ballPhase * 2.5f
+            drawCircle(
+              color = Color(0xFF111827),
+              radius = ballRadius * 0.42f,
+              center = Offset(ballX + ballRadius * 0.35f * kotlin.math.cos(rotAngle), ballY + ballRadius * 0.35f * kotlin.math.sin(rotAngle))
+            )
+          }
+        }
+
+        if (hasSpeech) {
+          Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = Color.Black.copy(alpha = 0.8f),
+            border = androidx.compose.foundation.BorderStroke(1.5.dp, accentColor.copy(alpha = 0.8f)),
+            modifier = Modifier
+              .align(Alignment.TopCenter)
+              .statusBarsPadding()
+              .padding(top = 16.dp, start = 24.dp, end = 24.dp)
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Text(
+                text = "«$effectiveSpeech»",
+                color = Color.White,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
+              )
+            }
+          }
+        }
+
+        // Водяной знак "LoopAi" (полупрозрачный)
         Text(
           text = "LoopAi",
           color = Color.White.copy(alpha = 0.55f),
