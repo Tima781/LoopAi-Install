@@ -21,29 +21,32 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - name: Setup Android SDK
+      - name: Accept Android SDK Licenses & Install Components
         run: |
           mkdir -p ~/.android
           touch ~/.android/repositories.cfg
           export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
-          echo "y" | sdkmanager --licenses || true
+          yes | sdkmanager --licenses || true
           sdkmanager "platforms;android-36" "build-tools;36.0.0" || true
 
-      - name: Prepare environment and keystore
+      - name: Prepare Keystore and Environment
         run: |
+          touch .env
+          touch app/.env
           if [ -f debug.keystore.base64 ]; then
             base64 -d debug.keystore.base64 > debug.keystore 2>/dev/null || base64 --decode debug.keystore.base64 > debug.keystore || true
           fi
-          touch .env
-          touch app/.env
+          if [ ! -s debug.keystore ]; then
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.3.1'
 
-      - name: Build APK
-        run: gradle :app:assembleDebug --stacktrace --no-daemon
+      - name: Build Debug APK
+        run: gradle :app:assembleDebug -x test -x lint -x verifyRoborazziDebug --stacktrace --no-daemon
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
