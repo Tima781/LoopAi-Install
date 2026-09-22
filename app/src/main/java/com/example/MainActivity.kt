@@ -388,15 +388,12 @@ enum class AiModelType(
   val badge: String,
   val isVideoModel: Boolean = false,
 ) {
-  LOOP("Loop", "Официальный главный ИИ-интеллект (Loop 1.0)", "✨ Loop", false),
-  DEEPSEEK("DeepSeek R1", "Мощная аналитика и рассуждения (R1 / V3)", "R1", false),
-  GEMINI("Gemini Pro", "Интеллектуальный поиск и креативность (Google)", "3.1", false),
-  CHATGPT("ChatGPT", "Универсальный помощник (GPT-4o)", "4o", false),
-  CLAUDE("Claude", "Точная работа с текстом и кодом (Sonnet)", "3.5", false),
+  LOOP("Loop AI", "Главный универсальный интеллект", "✨ Loop", false),
+  LOOP_PRO("Loop Pro", "Глубокая логика, анализ и факты", "🧠 Pro", false),
+  LOOP_CREATIVE("Loop Creative", "Креативность, идеи и тексты", "🎨 Creative", false),
 
-  GOOGLE_OMNI_FLASH("Google Omni Flash", "Мультимодальный синтез речи и видео", "⚡ Omni", true),
-  VEO_3("Google Veo 3", "Кинематографичная генерация видео 4K 60FPS", "✨ Veo 3", true),
-  SEEDANSE("Reanme 2.0", "Официальный ИИ видеогенерации от LoopAi • 60 FPS 4K (Seedanse 2.0)", "🎬 Reanme", true),
+  LOOP_VIDEO("Loop Video", "Генерация 60 FPS 4K видеороликов", "🎬 Video", true),
+  LOOP_CINEMA("Loop Cinema", "Кинематографическая видеостудия", "✨ Cinema", true),
 }
 
 enum class RainbowTitleColor(
@@ -526,11 +523,10 @@ object GeminiApiClient {
       connection.readTimeout = 20000
 
       val systemText = when (modelType) {
-        AiModelType.LOOP -> "Ты — настоящий усовершенствованный искусственный интеллект по имени Loop. Ты генерируешь глубокие, живые, грамотные и полезные ответы на любые вопросы пользователя. Будь вежливым, умным и отвечай прямо на русском языке."
-        AiModelType.DEEPSEEK -> "Ты — искусственный интеллект DeepSeek R1."
-        AiModelType.CHATGPT -> "Ты — искусственный интеллект ChatGPT (GPT-4o)."
-        AiModelType.CLAUDE -> "Ты — искусственный интеллект Claude 3.5 Sonnet."
-        else -> "Ты — искусственный интеллект по имени Loop."
+        AiModelType.LOOP -> "Ты — официальный главный искусственный интеллект Loop AI. Ты генерируешь глубокие, живые, грамотные и полезные ответы на любые вопросы пользователя. Будь вежливым, умным и отвечай прямо на русском языке."
+        AiModelType.LOOP_PRO -> "Ты — искусственный интеллект Loop Pro. Отвечай подробно, логично, с глубокой аналитикой, точными фактами и разбором."
+        AiModelType.LOOP_CREATIVE -> "Ты — искусственный интеллект Loop Creative. Предлагай нестандартные, креативные и вдохновляющие идеи, тексты и сценарии."
+        else -> "Ты — искусственный интеллект Loop AI."
       }
 
       val jsonRequest = org.json.JSONObject().apply {
@@ -586,12 +582,10 @@ object PollinationsTextApiClient {
     model: AiModelType,
   ): String = kotlinx.coroutines.withContext(Dispatchers.IO) {
     val systemPrompt = when (model) {
-      AiModelType.LOOP -> "Ты — настоящий независимый умный искусственный интеллект по имени Loop (аналог ChatGPT / Gemini / Dola AI). Отвечай на абсолютно любые вопросы пользователя живым, содержательным, интересным и грамотным языком на русском без сгенерированных штампов или заготовок."
-      AiModelType.DEEPSEEK -> "Ты — искусственный интеллект DeepSeek R1. Отвечай подробно и логично."
-      AiModelType.CHATGPT -> "Ты — искусственный интеллект ChatGPT (GPT-4o)."
-      AiModelType.CLAUDE -> "Ты — искусственный интеллект Claude 3.5."
-      AiModelType.GEMINI -> "Ты — искусственный интеллект Google Gemini."
-      else -> "Ты — искусственный интеллект Loop."
+      AiModelType.LOOP -> "Ты — официальный главный искусственный интеллект Loop AI. Отвечай на любые вопросы пользователя живым, содержательным, интересным и грамотным языком на русском без штампов."
+      AiModelType.LOOP_PRO -> "Ты — искусственный интеллект Loop Pro. Отвечай подробно, логично, структурированно и глубоко."
+      AiModelType.LOOP_CREATIVE -> "Ты — искусственный интеллект Loop Creative. Предлагай креативные и нестандартные решения."
+      else -> "Ты — искусственный интеллект Loop AI."
     }
 
     // 1. Try POST JSON endpoint to Pollinations AI
@@ -668,11 +662,7 @@ suspend fun generateAiResponseAsync(
   // 1. First try Gemini API if key is available
   if (apiKeyToUse.isNotBlank() && apiKeyToUse != "MY_GEMINI_API_KEY") {
     val modelTag = when (model) {
-      AiModelType.LOOP -> "gemini-2.5-flash"
-      AiModelType.GEMINI -> "gemini-2.5-flash"
-      AiModelType.DEEPSEEK -> "gemini-3.1-pro-preview"
-      AiModelType.CHATGPT -> "gemini-2.5-flash"
-      AiModelType.CLAUDE -> "gemini-3.1-pro-preview"
+      AiModelType.LOOP_PRO -> "gemini-3.1-pro-preview"
       else -> "gemini-2.5-flash"
     }
     val realResponse = GeminiApiClient.callGeminiApi(userPrompt, apiKeyToUse, modelTag, model)
@@ -681,7 +671,7 @@ suspend fun generateAiResponseAsync(
     }
   }
 
-  // 2. Real Generative AI Inference Engine (Free, Direct LLM Call like ChatGPT / Gemini)
+  // 2. Real Generative AI Inference Engine (Free, Direct LLM Call)
   val realInferenceResponse = PollinationsTextApiClient.generateText(userPrompt, model)
   if (realInferenceResponse.isNotBlank()) {
     return realInferenceResponse
@@ -839,30 +829,19 @@ fun LoopAiApp(
               if (!currentMsg.isGeneratingVideo) break
 
               if (sec == 1) {
-                val isReanme = modelName.contains("Reanme")
                 activeMessages[index] = currentMsg.copy(
-                  text = if (isReanme) "⚡ [1/3] Reanme 2.0 (LoopAi Engine) • Обработка 60 FPS кадров и физики сцены..."
-                         else "⚡ [1/3] Обработка 4K нейрокадров и анимации..."
+                  text = "⚡ [1/3] Loop Video Engine • Обработка 60 FPS кадров и физики сцены..."
                 )
               } else if (sec == 2) {
-                val isReanme = modelName.contains("Reanme")
                 activeMessages[index] = currentMsg.copy(
-                  text = if (isReanme) "🎬 [2/3] Reanme 2.0 • Кинематографический рендеринг Seedanse 2.0 & синтез звука..."
-                         else "🎬 [2/3] Синтез речи персонажа и липсинк эффектов..."
+                  text = "🎬 [2/3] Loop Video • Кинематографический рендеринг 4K & синтез звука..."
                 )
               } else if (sec >= totalSeconds) {
-                val isReanme = modelName.contains("Reanme")
                 activeMessages[index] = currentMsg.copy(
-                  text = if (isReanme) {
-                    if (photos.isNotEmpty()) {
-                      "✨ Ваше видео ($durationSeconds сек) успешно создано официальным ИИ Reanme 2.0 от LoopAi на основе ваших фото:\n«$prompt»"
-                    } else {
-                      "✨ Ваше видео ($durationSeconds сек) успешно создано официальным ИИ Reanme 2.0 от LoopAi:\n«$prompt»"
-                    }
-                  } else if (photos.isNotEmpty()) {
-                    "Ваше видео ($durationSeconds сек) готово по промпту: «$prompt» на основе ваших фото ($modelName)!"
+                  text = if (photos.isNotEmpty()) {
+                    "✨ Ваше видео ($durationSeconds сек) успешно создано Loop AI Video на основе ваших фото:\n«$prompt»"
                   } else {
-                    "Ваше видео ($durationSeconds сек) готово по промпту: «$prompt» ($modelName)!"
+                    "✨ Ваше видео ($durationSeconds сек) успешно создано Loop AI Video:\n«$prompt»"
                   },
                   isGeneratingVideo = false,
                   speechText = speech,
@@ -870,7 +849,7 @@ fun LoopAiApp(
                   videoSeed = System.currentTimeMillis(),
                 )
                 activeVideoJobs.remove(generatingMsgId)
-                Toast.makeText(context, "✨ Видео $modelName успешно создано!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "✨ Видео успешно создано!", Toast.LENGTH_SHORT).show()
               }
             }
           }
@@ -928,11 +907,7 @@ fun LoopAiApp(
                 )
               }
             } else if (selectedAiModel.isVideoModel) {
-              val modelToUse = when (selectedAiModel) {
-                AiModelType.VEO_3 -> "Veo 3"
-                AiModelType.GOOGLE_OMNI_FLASH -> "Google Omni Flash"
-                else -> selectedVideoModel
-              }
+              val modelToUse = if (selectedAiModel == AiModelType.LOOP_CINEMA) "Loop Cinema" else if (selectedVideoModel.isNotBlank()) selectedVideoModel else "Loop Video"
               activeMessages.add(
                 ChatMessage(
                   text = text,
@@ -950,7 +925,7 @@ fun LoopAiApp(
                 durationSeconds = 5,
               )
             } else {
-              // Standard AI chat text message (DeepSeek, Gemini, ChatGPT, Claude)
+              // Standard AI chat text message (Loop AI)
               activeMessages.add(
                 ChatMessage(
                   text = text,
@@ -1277,9 +1252,9 @@ fun ChatScreen(
           color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
         )
 
-        // СЕКЦИЯ 1: ЧАТЫ С ИИ (DeepSeek, Gemini, ChatGPT, Claude)
+        // СЕКЦИЯ 1: МОДЕЛИ LOOP AI
         Text(
-          text = "ЧАТЫ С ИИ",
+          text = "МОДЕЛИ LOOP AI",
           fontSize = 11.sp,
           fontWeight = FontWeight.Bold,
           color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
@@ -1347,9 +1322,9 @@ fun ChatScreen(
           color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
         )
 
-        // СЕКЦИЯ 2: ВИДЕО СТУДИЯ (Google Omni Flash, Veo 3, Seedanse)
+        // СЕКЦИЯ 2: ВИДЕО СТУДИЯ LOOP
         Text(
-          text = "ВИДЕО СТУДИЯ",
+          text = "ВИДЕО СТУДИЯ LOOP",
           fontSize = 11.sp,
           fontWeight = FontWeight.Bold,
           color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
@@ -1993,16 +1968,11 @@ fun ChatScreen(
   }
 
   if (showAiContentStudioSheet) {
-    val defaultVideoModel = when (selectedAiModel) {
-      AiModelType.VEO_3 -> "Google Veo 3"
-      AiModelType.GOOGLE_OMNI_FLASH -> "Google Omni Flash"
-      AiModelType.SEEDANSE -> "Reanme 2.0"
-      else -> if (selectedVideoModel.isNotBlank()) selectedVideoModel else "Reanme 2.0"
-    }
+    val defaultVideoModel = if (selectedAiModel == AiModelType.LOOP_CINEMA) "Loop Cinema" else if (selectedVideoModel.isNotBlank()) selectedVideoModel else "Loop Video"
     DolaAiContentStudioBottomSheet(
       initialTab = activeStudioTab,
       selectedVideoModel = defaultVideoModel,
-      selectedImageModel = "Rolatsee 1.0",
+      selectedImageModel = "Loop Image Pro",
       accentColor = accentColor,
       onDismiss = { showAiContentStudioSheet = false },
       onGenerateVideo = { prompt, model, photos, aspect, duration ->
@@ -2032,13 +2002,13 @@ enum class AiStudioContentTab(val title: String) {
   VIDEO("Видео"),
 }
 
-// All-in-one Dola AI Content Creation Bottom Sheet (Image & Video tabs with Rolatsee 1.0 and Reanme 2.0)
+// All-in-one Loop AI Content Creation Bottom Sheet (Image & Video tabs)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DolaAiContentStudioBottomSheet(
   initialTab: AiStudioContentTab = AiStudioContentTab.IMAGE,
-  selectedVideoModel: String = "Reanme 2.0",
-  selectedImageModel: String = "Rolatsee 1.0",
+  selectedVideoModel: String = "Loop Video",
+  selectedImageModel: String = "Loop Image Pro",
   accentColor: Color,
   onDismiss: () -> Unit,
   onGenerateVideo: (prompt: String, model: String, photos: List<String>, aspect: String, durationSeconds: Int) -> Unit,
@@ -2268,10 +2238,9 @@ fun DolaAiContentStudioBottomSheet(
         Spacer(modifier = Modifier.height(8.dp))
 
         val imageModels = listOf(
-          Triple("Rolatsee 1.0", "✨ Seedream 5.0", "Ультра 4K • Фотореализм и точный свет"),
-          Triple("Dreamina Seedream 5.0", "🎨 Pro Render", "Максимальная детализация лиц и фонов"),
-          Triple("Imagen 3 HD", "🌟 Google AI", "Высокая точность соблюдения промптов"),
-          Triple("FLUX.1 Schnell", "⚡ Быстрый", "Мгновенная генерация артов")
+          Triple("Loop Image Pro", "✨ Ultra 4K", "Ультра 4K • Фотореализм и точный свет"),
+          Triple("Loop Art", "🎨 Pro Render", "Максимальная детализация лиц и фонов"),
+          Triple("Loop Fast", "⚡ Быстрый", "Мгновенная генерация артов")
         )
 
         LazyRow(
@@ -2279,7 +2248,7 @@ fun DolaAiContentStudioBottomSheet(
           horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
           items(imageModels) { (mName, mBadge, mDesc) ->
-            val isSelected = chosenImageModel == mName || (mName == "Rolatsee 1.0" && chosenImageModel.contains("Rolatsee"))
+            val isSelected = chosenImageModel == mName || (mName == "Loop Image Pro" && chosenImageModel.contains("Loop Image"))
             Surface(
               onClick = { chosenImageModel = mName },
               shape = RoundedCornerShape(12.dp),
@@ -2662,11 +2631,9 @@ fun DolaAiContentStudioBottomSheet(
         Spacer(modifier = Modifier.height(8.dp))
 
         val videoModels = listOf(
-          Triple("Reanme 2.0", "✨ Официальный ИИ • LoopAi", "Собственная ИИ от LoopAi • Профессиональное кинокачество 60 FPS как у Seedanse 2.0, динамика и физика сцен"),
-          Triple("Reanme Fast", "⚡ 60 FPS Fast • LoopAi", "Турбо-генерация 60 FPS видеороликов от LoopAi за пару секунд"),
-          Triple("Seedanse 2.0 Pro", "🎬 4K Cinema", "Кинематографический рендеринг Dreamina Seedanse"),
-          Triple("Google Veo 3", "✨ Veo 3 HD", "Кинематографические ракурсы камеры от Google"),
-          Triple("Google Omni Flash", "⚡ Omni Video", "Быстрая мультимодальная генерация речи и видео")
+          Triple("Loop Video", "✨ 60 FPS 4K", "Собственная видео-модель от Loop AI • Профессиональное кинокачество 60 FPS, динамика и физика сцен"),
+          Triple("Loop Fast", "⚡ 60 FPS Turbo", "Турбо-генерация 60 FPS видеороликов за пару секунд"),
+          Triple("Loop Cinema", "🎬 4K Cinema", "Кинематографический рендеринг, глубина кадра и спецэффекты")
         )
 
         LazyRow(
@@ -2674,7 +2641,7 @@ fun DolaAiContentStudioBottomSheet(
           horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
           items(videoModels) { (mName, mBadge, mDesc) ->
-            val isSelected = chosenVideoModel == mName || (mName == "Reanme 2.0" && (chosenVideoModel.contains("Reanme") || chosenVideoModel.isEmpty()))
+            val isSelected = chosenVideoModel == mName || (mName == "Loop Video" && (chosenVideoModel.contains("Loop Video") || chosenVideoModel.isEmpty()))
             Surface(
               onClick = { chosenVideoModel = mName },
               shape = RoundedCornerShape(12.dp),
@@ -4013,7 +3980,7 @@ fun VideoGenerationPlayer(
         }
       }
 
-      // Водяной знак "Reanme • LoopAi" (полупрозрачный)
+      // Водяной знак "Loop AI" (полупрозрачный)
       Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -4030,7 +3997,7 @@ fun VideoGenerationPlayer(
         )
         Spacer(modifier = Modifier.width(4.dp))
         Text(
-          text = "Reanme • LoopAi",
+          text = "Loop AI Video",
           color = Color.White.copy(alpha = 0.9f),
           fontSize = 11.sp,
           fontWeight = FontWeight.Bold,
@@ -4122,7 +4089,7 @@ fun VideoGenerationPlayer(
           maxLines = 1
         )
         Text(
-          text = if (hasSpeech) "Reanme 2.0 (LoopAi) • Озвучка & Анимация 60 FPS" else "Reanme 2.0 (LoopAi) • Формат $aspectRatio • 60 FPS Cinema",
+          text = if (hasSpeech) "Loop AI Video • Озвучка & Анимация 60 FPS" else "Loop AI Video • Формат $aspectRatio • 60 FPS Cinema",
           color = Color.White.copy(alpha = 0.7f),
           fontSize = 10.sp,
         )
@@ -4585,10 +4552,10 @@ fun SettingsDialog(
               }
             }
 
-            // 1. Google Gemini / Omni Flash Key
+            // 1. Loop Neural Engine API Key
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
               Text(
-                text = "1. Google Omni Flash & Gemini API Key",
+                text = "1. Loop Neural Engine API Key",
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = accentColor
@@ -4599,7 +4566,7 @@ fun SettingsDialog(
                   geminiKeyInput = it
                   prefs.edit().putString("custom_gemini_api_key", it.trim()).apply()
                 },
-                placeholder = { Text("AI Studio Gemini API Key") },
+                placeholder = { Text("Neural Engine API Key") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("custom_gemini_api_key_input"),
                 colors = OutlinedTextFieldDefaults.colors(
@@ -4608,10 +4575,10 @@ fun SettingsDialog(
               )
             }
 
-            // 2. Dreamina Video Server Key
+            // 2. Loop Video Cloud Server Key
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
               Text(
-                text = "2. Dreamina AI Video Server Key",
+                text = "2. Loop Video Cloud Server Key",
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = accentColor
@@ -4622,7 +4589,7 @@ fun SettingsDialog(
                   dreaminaKeyInput = it
                   prefs.edit().putString("custom_dreamina_api_key", it.trim()).apply()
                 },
-                placeholder = { Text("Dreamina Server API Key") },
+                placeholder = { Text("Video Cloud API Key") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("custom_dreamina_api_key_input"),
                 colors = OutlinedTextFieldDefaults.colors(
@@ -4631,10 +4598,10 @@ fun SettingsDialog(
               )
             }
 
-            // 3. Seedanse Video AI Key
+            // 3. Loop Studio Video Key
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
               Text(
-                text = "3. Seedanse Neural Video Key",
+                text = "3. Loop Studio Video Key",
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = accentColor
@@ -4645,7 +4612,7 @@ fun SettingsDialog(
                   seedanseKeyInput = it
                   prefs.edit().putString("custom_seedanse_api_key", it.trim()).apply()
                 },
-                placeholder = { Text("Seedanse API Key") },
+                placeholder = { Text("Studio Video API Key") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("custom_seedanse_api_key_input"),
                 colors = OutlinedTextFieldDefaults.colors(
@@ -5081,7 +5048,7 @@ fun DeveloperSettingsSection(accentColor: Color) {
                 color = MaterialTheme.colorScheme.onSurface
               )
               Text(
-                text = "Логирование работы моделей Seedanse и Veo",
+                text = "Логирование работы Loop AI Video",
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
               )
